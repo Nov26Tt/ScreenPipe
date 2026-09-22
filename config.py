@@ -49,7 +49,7 @@ class Config:
                 "save_dir": ""
             },
             "server": {
-                "port": 8000,
+                "port": 8765,
                 "host": "0.0.0.0"
             },
             "history": {
