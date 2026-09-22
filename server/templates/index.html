@@ -437,23 +437,24 @@
 
       <div class="vision-warning">
         <strong>⚠️ 重要：必须使用支持图片识别的多模态（Vision）模型！</strong><br>
-        纯文本模型（deepseek-chat、moonshot-v1-8k 等）无法识别截图。<br>
-        ✅ 推荐：GPT-4o、qwen-vl-max、doubao-vision、glm-4v、MiniMax Token Plan (VLM)。
+        纯文本模型（如 deepseek-chat 等未开启视觉的模型）无法识别截图。<br>
+        ✅ 推荐：gpt-5.6-terra、qwen3-vl-plus、doubao-seed-1.6-vision、glm-4.6v、deepseek-flash、kimi-k2.6、MiniMax Token Plan (VLM)。<br>
+        📌 模型名会随厂商快速迭代，下方预设仅作起点，请以各厂商官方文档为准。
       </div>
 
       <div class="form-group">
         <label>LLM 类型（快速选择）</label>
         <select id="llmPreset" onchange="applyPreset()">
           <option value="custom">自定义</option>
-          <option value="openai">OpenAI (GPT-4o)</option>
-          <option value="qwen">通义千问 VL / 阿里</option>
-          <option value="doubao">豆包 Vision / 火山引擎</option>
-          <option value="zhipu">智谱 GLM-4V</option>
-          <option value="siliconflow">SiliconFlow (Qwen-VL)</option>
-          <option value="deepseek">DeepSeek (不支持图片)</option>
+          <option value="openai">OpenAI (GPT-5.6)</option>
+          <option value="qwen">通义千问 VL / 阿里百炼</option>
+          <option value="doubao">豆包 Vision / 火山方舟</option>
+          <option value="zhipu">智谱 GLM-V</option>
+          <option value="siliconflow">SiliconFlow (Qwen3-VL)</option>
+          <option value="deepseek">DeepSeek (deepseek-flash)</option>
           <option value="minimax">MiniMax Token Plan (VLM)</option>
-          <option value="moonshot">Moonshot/Kimi (不支持图片)</option>
-          <option value="ollama">Ollama 本地 (llava)</option>
+          <option value="moonshot">Moonshot / Kimi (kimi-k2.6)</option>
+          <option value="ollama">Ollama 本地 (Qwen3.5)</option>
         </select>
       </div>
 
@@ -764,17 +765,19 @@
     function applyPreset() {
       const preset = document.getElementById('llmPreset').value;
       const presets = {
-        openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o' },
-        qwen: { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-vl-max' },
-        doubao: { base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1.5-vision-pro-32k' },
-        zhipu: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4v' },
-        siliconflow: { base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+        openai: { base: 'https://api.openai.com/v1', model: 'gpt-5.6-terra' },
+        qwen: { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-plus' },
+        doubao: { base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1.6-vision' },
+        zhipu: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v' },
+        siliconflow: { base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-VL-235B-A22B-Instruct' },
         minimax: { base: 'https://api.minimax.chat/v1', model: 'MiniMax-M2.7' },
-        deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-        moonshot: { base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k-vision' },
-        ollama: { base: 'http://localhost:11434/v1', model: 'llava:latest' }
+        deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
+        moonshot: { base: 'https://api.moonshot.cn/v1', model: 'kimi-k2.6' },
+        ollama: { base: 'http://localhost:11434/v1', model: 'qwen3.5:9b' }
       };
-      // MiniMax Token Plan 已通过 VLM 端点支持图片识别，deepseek/moonshot 不支持
+      // 以上预设均已支持图片输入。模型名会随厂商快速迭代，
+      // 若调用失败请以各厂商官方文档的模型列表为准。
+      // 注：MiniMax 走专用 VLM 端点，请求中不发送 model 字段。
 
       if (preset !== 'custom' && presets[preset]) {
         document.getElementById('apiBase').value = presets[preset].base;
