@@ -15,11 +15,11 @@ def main():
 
     cfg = config.server_config
     host = cfg.get("host", "0.0.0.0")
-    port = cfg.get("port", 8000)
+    port = cfg.get("port", 8765)
 
     print("""
 ============================================
-         测评辅助系统 v1.0
+          SnapStudy 学习助手 v1.0
 ============================================""")
 
     run_server(host=host, port=port)
