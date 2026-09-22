@@ -39,6 +39,9 @@ capture_task: Optional[asyncio.Task] = None
 history_records = []
 connected_websockets = set()
 
+# 实际监听端口：由 run_server 在启动前写入，可能不同于配置端口
+actual_port: Optional[int] = None
+
 
 def init_modules():
     global capture, llm_client
@@ -73,11 +76,40 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
+def find_available_port(preferred: int, host: str = "0.0.0.0",
+                        attempts: int = 20) -> int:
+    """返回可用端口：优先使用 preferred，被占用则依次向后探测。
+
+    这样即使配置端口被别的程序占用（例如 8000 被其他开发服务占用），
+    服务也能自动换端口启动，而不是直接失败。
+    """
+    for offset in range(attempts):
+        candidate = preferred + offset
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind((host, candidate))
+            return candidate
+        except OSError:
+            continue
+
+    raise RuntimeError(
+        f"从 {preferred} 开始的 {attempts} 个端口均被占用，"
+        f"请修改 config.yaml 中的 server.port"
+    )
+
+
+def current_port() -> int:
+    """当前实际使用的端口。"""
+    if actual_port:
+        return actual_port
+    return int(config.server_config.get("port", 8765))
+
+
 @app.on_event("startup")
 async def startup():
     init_modules()
     local_ip = get_local_ip()
-    port = config.server_config.get("port", 8000)
+    port = current_port()
     logger.info(f"服务已启动，手机浏览器访问: http://{local_ip}:{port}")
 
 
@@ -96,7 +128,7 @@ async def get_status():
         "capture_running": capture_running,
         "config": config.to_dict(),
         "local_ip": get_local_ip(),
-        "port": config.server_config.get("port", 8000),
+        "port": current_port(),
         "history_count": len(history_records),
         "ws_connections": len(connected_websockets)
     }
@@ -227,7 +259,7 @@ async def stop_capture():
 
 @app.get("/api/ip")
 async def get_ip():
-    return {"ip": get_local_ip(), "port": config.server_config.get("port", 8000)}
+    return {"ip": get_local_ip(), "port": current_port()}
 
 
 # ==================== WebSocket ====================
@@ -387,10 +419,16 @@ async def auto_capture_loop():
     })
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8000):
-    uvicorn.run(app, host=host, port=port, log_level="info")
+def run_server(host: str = "0.0.0.0", port: int = 8765):
+    global actual_port
+
+    actual_port = find_available_port(port, host)
+    if actual_port != port:
+        logger.warning(f"端口 {port} 已被占用，已自动切换到 {actual_port}")
+
+    uvicorn.run(app, host=host, port=actual_port, log_level="info")
 
 
 if __name__ == "__main__":
     cfg = config.server_config
-    run_server(host=cfg.get("host", "0.0.0.0"), port=cfg.get("port", 8000))
+    run_server(host=cfg.get("host", "0.0.0.0"), port=cfg.get("port", 8765))
