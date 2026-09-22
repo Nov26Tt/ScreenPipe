@@ -48,29 +48,32 @@
 
 ## 快速开始
 
-### 方式一：一键脚本（推荐）
+### 方式一：一键启动（推荐）
 
-脚本会自动完成全流程，可重复运行，已完成的步骤会自动跳过：
-
-```text
-定位 Python 3.10+  →  创建虚拟环境 .venv  →  安装依赖
-     →  从模板生成 config.yaml  →  启动服务
-```
-
-**Windows**：双击 `start.bat`，或在终端执行：
-
-```bat
-start.bat
-```
-
-**macOS / Linux**：
+核心入口**只有 `launcher.py` 一个文件**，跨平台通用、仅依赖 Python 标准库：
 
 ```bash
-chmod +x start.sh   # 首次运行需赋予执行权限
-./start.sh
+python launcher.py
 ```
 
-首次运行会自动从 `config.example.yaml` 生成 `config.yaml`，若其中的 `api_key` 仍是占位符，脚本会给出提示，请填入自己的密钥。
+它会按顺序自动完成全流程，可重复运行，已完成的步骤会自动跳过：
+
+```text
+1/5  校验 Python 3.10+
+2/5  创建 / 复用项目级虚拟环境 .venv
+3/5  校验并安装 requirements.txt 中的依赖
+4/5  从 config.example.yaml 生成 config.yaml
+5/5  启动服务
+```
+
+如果你更习惯双击运行，`start.bat`（Windows）与 `start.sh`（macOS / Linux）只是「定位 Python」的薄封装，业务逻辑与上表完全一致：
+
+| 系统 | 运行方式 |
+| --- | --- |
+| Windows | 双击 `start.bat` |
+| macOS / Linux | `chmod +x start.sh` 后执行 `./start.sh` |
+
+首次运行会自动从 `config.example.yaml` 生成 `config.yaml`，若其中 `api_key` 仍是占位符会给出提示，请填入自己的密钥。
 
 ### 方式二：手动安装
 
@@ -112,7 +115,7 @@ python main.py
 启动后终端会打印手机访问地址，形如：
 
 ```text
-服务已启动，手机浏览器访问: http://192.168.1.100:8000
+服务已启动，手机浏览器访问: http://192.168.1.100:8765
 ```
 
 ### 手机端使用
@@ -136,7 +139,7 @@ python main.py
 | `llm.model` | 模型名称，**必须是支持图片输入的视觉模型** | `deepseek-flash` |
 | `llm.system_prompt` | 系统提示词，用于约束输出格式 | 见 `llm_client.py` |
 | `server.host` | 监听地址 | `0.0.0.0` |
-| `server.port` | 监听端口 | `8000` |
+| `server.port` | 监听端口，**被占用时自动向后探测** | `8765` |
 
 > 内置默认的 `llm.model` 是 `deepseek-flash`（支持图片输入），但仍请按下方表格确认你的服务商与可用模型名。
 
@@ -185,8 +188,9 @@ llm:
 ├── llm_client.py           # LLM 客户端（OpenAI 兼容 + MiniMax VLM）
 ├── config.example.yaml     # 配置模板
 ├── requirements.txt        # 依赖清单
-├── start.bat               # Windows 一键环境配置 + 启动脚本
-├── start.sh                # macOS / Linux 一键环境配置 + 启动脚本
+├── launcher.py             # 一键启动器（跨平台，唯一入口，含环境准备）
+├── start.bat               # Windows 双击入口（薄封装）
+├── start.sh                # macOS / Linux 入口（薄封装）
 └── server/
     ├── app.py              # FastAPI 服务 + WebSocket 推送
     └── templates/
@@ -198,6 +202,10 @@ llm:
 **Q：模型回复“没有收到图片”？**
 
 说明当前 `llm.model` 不是视觉模型。请更换为支持图片识别的多模态模型。
+
+**Q：端口被占用了怎么办？**
+
+默认端口为 `8765`（已避开 8000 / 8080 / 3000 等常用端口）。若该端口仍被占用，程序会**自动向后探测可用端口**并在终端打印实际地址，以打印出来的地址为准即可；也可以在 `config.yaml` 中通过 `server.port` 手动指定，或关闭占用该端口的程序。
 
 **Q：手机打不开页面？**
 
