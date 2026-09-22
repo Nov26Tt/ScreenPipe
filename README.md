@@ -42,21 +42,41 @@
 
 ## 环境要求
 
-- Python 3.10+
+- **Python 3.10+**（Windows 推荐使用官方自带的 `py` 启动器）
 - Windows / macOS / Linux（截屏基于 `mss`，Windows 体验最佳）
 - 一个支持图片识别的多模态大模型 API Key
+
+> **Windows 用户请注意**：如果 `python --version` 没有任何输出，说明该命令被
+> Microsoft Store 的占位程序（`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`，
+> 0 字节）拦截了。这不影响本项目 —— 请改用 `py` 命令，或直接双击 `start.bat`。
 
 ## 快速开始
 
 ### 方式一：一键启动（推荐）
 
-核心入口**只有 `launcher.py` 一个文件**，跨平台通用、仅依赖 Python 标准库：
+核心入口**只有 `launcher.py` 一个文件**，跨平台通用、仅依赖 Python 标准库。它会自动完成建虚拟环境、装依赖、生成配置、启动服务全流程。
+
+**Windows**：直接双击 `start.bat`（推荐，能自动跳过 Microsoft Store 的假 python）。
+
+**macOS / Linux**：
 
 ```bash
-python launcher.py
+chmod +x start.sh   # 首次运行需赋予执行权限
+./start.sh
 ```
 
-它会按顺序自动完成全流程，可重复运行，已完成的步骤会自动跳过：
+习惯用命令行的，也可以直接运行启动器：
+
+| 系统 | 命令 |
+| --- | --- |
+| Windows | `py launcher.py` |
+| macOS / Linux | `python3 launcher.py` |
+
+> ⚠️ **Windows 上不要用 `python launcher.py`**：PATH 中的
+> `...\WindowsApps\python.exe` 是 Microsoft Store 的 0 字节占位符，会吞掉命令、
+> 毫无反应。请用 `py`，或直接双击 `start.bat`。
+
+无论用哪种方式，执行的流程完全一致，可重复运行、已完成的步骤自动跳过：
 
 ```text
 1/5  校验 Python 3.10+
@@ -66,24 +86,38 @@ python launcher.py
 5/5  启动服务
 ```
 
-如果你更习惯双击运行，`start.bat`（Windows）与 `start.sh`（macOS / Linux）只是「定位 Python」的薄封装，业务逻辑与上表完全一致：
+> 首次运行时，创建虚拟环境与下载依赖可能耗时几分钟，请耐心等待；已完成的步骤在后续启动会自动跳过。
 
-| 系统 | 运行方式 |
-| --- | --- |
-| Windows | 双击 `start.bat` |
-| macOS / Linux | `chmod +x start.sh` 后执行 `./start.sh` |
+首次运行会自动从 `config.example.yaml` 生成 `config.yaml`；若其中 `api_key` 仍是占位符会给出提示，请填入自己的密钥。启动成功后终端会打印访问地址（默认端口 `8765`，被占用时自动向后探测）：
 
-首次运行会自动从 `config.example.yaml` 生成 `config.yaml`，若其中 `api_key` 仍是占位符会给出提示，请填入自己的密钥。
-
-### 方式二：手动安装
-
-#### 1. 安装依赖
-
-```bash
-pip install -r requirements.txt
+```text
+服务已启动，手机浏览器访问: http://192.168.1.100:8765
 ```
 
-#### 2. 配置
+按 `Ctrl + C` 可停止服务。
+
+### 方式二：手动安装（想自己控制环境时）
+
+#### 1. 确认 Python 版本
+
+```bash
+py --version        # Windows
+python3 --version   # macOS / Linux
+```
+
+需要 **3.10 或更高**。若命令报错，说明 Python 未安装或未加入 PATH，请先安装：
+<https://www.python.org/downloads/>（Windows 安装时务必勾选 `Add python.exe to PATH`）。
+
+#### 2. 安装依赖
+
+```bash
+py -m pip install -r requirements.txt        # Windows
+python3 -m pip install -r requirements.txt   # macOS / Linux
+```
+
+> 使用 `python -m pip` 而不是裸 `pip`，可确保依赖装进上面那个解释器。
+
+#### 3. 配置
 
 复制配置模板并填入你自己的信息：
 
@@ -106,10 +140,11 @@ llm:
 
 > 注意：`config.yaml` 已被 `.gitignore` 忽略，不会被上传到仓库，请放心填写。
 
-#### 3. 启动
+#### 4. 启动
 
 ```bash
-python main.py
+py main.py        # Windows
+python3 main.py   # macOS / Linux
 ```
 
 启动后终端会打印手机访问地址，形如：
@@ -120,7 +155,7 @@ python main.py
 
 ### 手机端使用
 
-确保手机与电脑处于**同一局域网**，用手机浏览器打开终端打印的地址即可：
+确保手机与电脑处于**同一局域网**，用手机浏览器打开终端打印的地址即可（以终端实际打印的为准，端口可能因自动避让而与配置值不同）：
 
 - 点击「自动截屏」开始持续识别
 - 点击「截屏一次」手动触发
@@ -202,6 +237,10 @@ llm:
 **Q：模型回复“没有收到图片”？**
 
 说明当前 `llm.model` 不是视觉模型。请更换为支持图片识别的多模态模型。
+
+**Q：Windows 上输入 `python launcher.py` 毫无反应？**
+
+PATH 里的 `python` 被 Microsoft Store 的 0 字节占位程序拦截了。改用 `py launcher.py`，或直接双击 `start.bat`。详见上方「环境要求」中的说明。
 
 **Q：端口被占用了怎么办？**
 
