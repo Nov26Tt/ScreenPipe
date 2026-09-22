@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""SnapStudy 一键启动器（跨平台，仅依赖标准库）。
+"""SnapStudy 一键启动器（Windows，仅依赖标准库）。
 
-用法：
-    python launcher.py
-
-自动完成以下步骤，可重复运行，已完成的步骤会自动跳过：
+由 start.bat 调用，正常使用时不需要手动运行。自动完成以下步骤，
+可重复运行，已完成的步骤会自动跳过：
 
     1/5  校验 Python 版本（>= 3.10）
     2/5  创建或复用项目级虚拟环境 .venv
@@ -12,8 +10,7 @@
     4/5  从 config.example.yaml 生成 config.yaml
     5/5  启动服务
 
-无论 Windows / macOS / Linux，本文件都是同一个入口；
-start.bat 与 start.sh 只是双击用的薄封装，不含任何业务逻辑。
+调试时也可以单独运行：py launcher.py
 """
 
 from __future__ import annotations
