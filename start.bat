@@ -7,9 +7,9 @@ REM Capture the script directory here: %~dp0 is not reliable inside a
 REM subroutine invoked with "call :label".
 set "PROJECT_DIR=%~dp0"
 
-REM Thin wrapper only: every environment step (venv, dependencies, config)
-REM lives in launcher.py, the single cross-platform entry point. This file
-REM just locates a usable Python and hands over to it.
+REM This file is the ONE and ONLY entry point: just double-click it.
+REM Every environment step (venv, dependencies, config) lives in launcher.py;
+REM this script only locates a usable Python and hands over to it.
 call :find_python
 if defined PYTHON_EXE goto :run
 
