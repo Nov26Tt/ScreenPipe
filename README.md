@@ -72,7 +72,7 @@ cp config.example.yaml config.yaml
 llm:
   api_base: https://api.deepseek.com/v1   # 任意 OpenAI 兼容地址
   api_key: your-api-key-here              # 你自己的 Key
-  model: gpt-4o                           # 必须是视觉模型
+  model: deepseek-flash                   # 必须是视觉模型
 ```
 
 > 注意：`config.yaml` 已被 `.gitignore` 忽略，不会被上传到仓库，请放心填写。
@@ -107,16 +107,47 @@ Windows 用户也可直接双击 `start.bat`，脚本会自动检查 Python 与�
 | `capture.quality` | JPEG 压缩质量 | `60` |
 | `capture.region` | 截屏区域 `[left, top, width, height]`，不填为全屏 | 全屏 |
 | `history.max_records` | 历史记录保留条数 | `200` |
-| `llm.api_base` | OpenAI 兼容 API 地址 | - |
-| `llm.api_key` | API 密钥 | - |
-| `llm.model` | 模型名称，需支持图片识别 | - |
-| `llm.system_prompt` | 系统提示词，用于约束输出格式 | 见代码默认值 |
+| `llm.api_base` | OpenAI 兼容 API 地址，程序会在其后拼接 `/chat/completions` | `https://api.deepseek.com/v1` |
+| `llm.api_key` | API 密钥，**必须替换成自己的** | `your-api-key-here` |
+| `llm.model` | 模型名称，**必须是支持图片输入的视觉模型** | `deepseek-chat` |
+| `llm.system_prompt` | 系统提示词，用于约束输出格式 | 见 `llm_client.py` |
 | `server.host` | 监听地址 | `0.0.0.0` |
 | `server.port` | 监听端口 | `8000` |
 
+> 内置默认的 `llm.model` 是 `deepseek-chat`（纯文本模型），只能占位，必须改成下面的视觉模型才能识图。
+
 ### 推荐的视觉模型
 
-`gpt-4o` / `qwen-vl-max` / `glm-4v` / `doubao-vision` / MiniMax 系列等。
+| 服务商 | 模型名示例 | `api_base` 示例 |
+| --- | --- | --- |
+| OpenAI | `gpt-5.6-terra` | `https://api.openai.com/v1` |
+| DeepSeek | `deepseek-flash` | `https://api.deepseek.com/v1` |
+| 通义千问 | `qwen3-vl-plus` | 阿里云百炼 OpenAI 兼容地址 |
+| 智谱 AI | `glm-4.6v` | 智谱 OpenAI 兼容地址 |
+| 豆包 | `doubao-seed-1.6-vision` | 火山方舟 OpenAI 兼容地址 |
+| Moonshot / Kimi | `kimi-k2.6` | `https://api.moonshot.cn/v1` |
+| SiliconFlow | `Qwen/Qwen3-VL-235B-A22B-Instruct` | `https://api.siliconflow.cn/v1` |
+| MiniMax | Token Plan VLM 端点 | `https://api.minimax.chat/v1` |
+
+> 模型名会随各家厂商迭代变化，上表仅作起点，请以对应官方文档为准。
+
+#### DeepSeek
+
+DeepSeek 已提供支持图片输入的 `deepseek-flash`：
+
+```yaml
+llm:
+  api_base: https://api.deepseek.com/v1
+  model: deepseek-flash
+```
+
+图片以 `data:image/jpeg;base64,...` 内联传入（本项目即采用这种方式）；`image_url.detail` 支持 `low` / `high` / `original` / `auto`。注意**图片只能出现在 user 消息中**，放进 system 或 assistant 消息会返回 400。
+
+> 旧模型名 `deepseek-v4-flash-vision-exp` 已下线：调用仍会被接受，但请求实际由最新的 Flash 模型承接，新接入请直接使用 `deepseek-flash`。
+
+#### MiniMax
+
+`api_base` 填 `https://api.minimax.chat/v1` 即可。程序会识别 MiniMax 域名并自动改走 Token Plan 的 VLM 专用端点（`/v1/coding_plan/vlm`），无需额外配置。
 
 > 纯文本模型无法识别截图，程序会在检测到未识图时给出提示。
 

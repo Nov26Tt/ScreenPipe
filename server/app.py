@@ -307,7 +307,8 @@ def _check_vision_issue(content: str) -> str:
             return (
                 "⚠️ 大模型可能未识别到截图！"
                 "请确认当前使用的模型支持图片识别（Vision/多模态模型），"
-                "纯文本模型无法处理截图。推荐使用 GPT-4o、qwen-vl-max、doubao-vision、glm-4v。"
+                "纯文本模型无法处理截图。推荐使用 gpt-5.6-terra、qwen3-vl-plus、"
+                "doubao-seed-1.6-vision、glm-4.6v、deepseek-flash、kimi-k2.6。"
             )
     return ""
 

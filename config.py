@@ -40,7 +40,7 @@ class Config:
             "llm": {
                 "api_base": "https://api.deepseek.com/v1",
                 "api_key": "your-api-key-here",
-                "model": "deepseek-chat",
+                "model": "deepseek-flash",
                 "system_prompt": "你是一个专业的测评辅助AI。请识别题目并给出答案。"
             },
             "capture": {
