@@ -48,13 +48,39 @@
 
 ## 快速开始
 
-### 1. 安装依赖
+### 方式一：一键脚本（推荐）
+
+脚本会自动完成全流程，可重复运行，已完成的步骤会自动跳过：
+
+```text
+定位 Python 3.10+  →  创建虚拟环境 .venv  →  安装依赖
+     →  从模板生成 config.yaml  →  启动服务
+```
+
+**Windows**：双击 `start.bat`，或在终端执行：
+
+```bat
+start.bat
+```
+
+**macOS / Linux**：
+
+```bash
+chmod +x start.sh   # 首次运行需赋予执行权限
+./start.sh
+```
+
+首次运行会自动从 `config.example.yaml` 生成 `config.yaml`，若其中的 `api_key` 仍是占位符，脚本会给出提示，请填入自己的密钥。
+
+### 方式二：手动安装
+
+#### 1. 安装依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 配置
+#### 2. 配置
 
 复制配置模板并填入你自己的信息：
 
@@ -77,13 +103,11 @@ llm:
 
 > 注意：`config.yaml` 已被 `.gitignore` 忽略，不会被上传到仓库，请放心填写。
 
-### 3. 启动
+#### 3. 启动
 
 ```bash
 python main.py
 ```
-
-Windows 用户也可直接双击 `start.bat`，脚本会自动检查 Python 与依赖。
 
 启动后终端会打印手机访问地址，形如：
 
@@ -91,7 +115,7 @@ Windows 用户也可直接双击 `start.bat`，脚本会自动检查 Python 与�
 服务已启动，手机浏览器访问: http://192.168.1.100:8000
 ```
 
-### 4. 手机端使用
+### 手机端使用
 
 确保手机与电脑处于**同一局域网**，用手机浏览器打开终端打印的地址即可：
 
@@ -109,12 +133,12 @@ Windows 用户也可直接双击 `start.bat`，脚本会自动检查 Python 与�
 | `history.max_records` | 历史记录保留条数 | `200` |
 | `llm.api_base` | OpenAI 兼容 API 地址，程序会在其后拼接 `/chat/completions` | `https://api.deepseek.com/v1` |
 | `llm.api_key` | API 密钥，**必须替换成自己的** | `your-api-key-here` |
-| `llm.model` | 模型名称，**必须是支持图片输入的视觉模型** | `deepseek-chat` |
+| `llm.model` | 模型名称，**必须是支持图片输入的视觉模型** | `deepseek-flash` |
 | `llm.system_prompt` | 系统提示词，用于约束输出格式 | 见 `llm_client.py` |
 | `server.host` | 监听地址 | `0.0.0.0` |
 | `server.port` | 监听端口 | `8000` |
 
-> 内置默认的 `llm.model` 是 `deepseek-chat`（纯文本模型），只能占位，必须改成下面的视觉模型才能识图。
+> 内置默认的 `llm.model` 是 `deepseek-flash`（支持图片输入），但仍请按下方表格确认你的服务商与可用模型名。
 
 ### 推荐的视觉模型
 
@@ -161,7 +185,8 @@ llm:
 ├── llm_client.py           # LLM 客户端（OpenAI 兼容 + MiniMax VLM）
 ├── config.example.yaml     # 配置模板
 ├── requirements.txt        # 依赖清单
-├── start.bat               # Windows 一键启动脚本
+├── start.bat               # Windows 一键环境配置 + 启动脚本
+├── start.sh                # macOS / Linux 一键环境配置 + 启动脚本
 └── server/
     ├── app.py              # FastAPI 服务 + WebSocket 推送
     └── templates/
