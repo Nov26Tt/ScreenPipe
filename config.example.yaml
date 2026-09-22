@@ -1,0 +1,27 @@
+# ============================================================
+# 配置模板
+# 用法：复制本文件并重命名为 config.yaml，然后填入你自己的配置
+#      config.yaml 已被 .gitignore 忽略，不会被提交到仓库
+# ============================================================
+
+capture:
+  interval: 10          # 自动截图间隔（秒）
+  quality: 60           # JPEG 压缩质量（1-95）
+  # region: [0, 0, 1920, 1080]   # 可选：指定截屏区域 [left, top, width, height]
+
+history:
+  max_records: 200      # 历史记录最多保留条数
+
+llm:
+  # 任意 OpenAI 兼容 API 地址，例如：
+  #   https://api.deepseek.com/v1
+  #   https://api.openai.com/v1
+  api_base: https://api.deepseek.com/v1
+  api_key: your-api-key-here          # ← 填入你自己的 Key，切勿泄露
+  # 必须使用支持图片识别的视觉模型，例如 gpt-4o / qwen-vl-max / glm-4v / doubao-vision
+  model: deepseek-chat
+  system_prompt: "你是一个学习辅助AI。请识别截图中的题目并给出解析。"
+
+server:
+  host: 0.0.0.0
+  port: 8000
