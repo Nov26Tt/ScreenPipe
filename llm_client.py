@@ -25,7 +25,7 @@ class LLMClient:
         self.api_key = api_key
         self.model = model
         self.system_prompt = system_prompt or (
-            "你是一个测评辅助AI。请识别截图中的题目，按以下格式输出：\n\n"
+            "你是一个学习辅助AI。请识别截图中的题目，按以下格式输出：\n\n"
             "选择题格式：题号. 题目一句话概括 - 正确答案选项内容\n"
             "  例：3. 企业文化的核心特征 - 独特性、稳定性、整合性\n"
             "判断题格式：题号. 题目一句话概括 - 对/错\n"
@@ -51,7 +51,7 @@ class LLMClient:
     async def _call_minimax_vlm(self, image_base64: str,
                                 user_prompt: Optional[str] = None) -> str:
         """通过 MiniMax Token Plan 专用 VLM 端点识别图片"""
-        prompt = user_prompt or "请识别这张截图中的测评题目，并给出正确答案或最佳选择。"
+        prompt = user_prompt or "请识别这张截图中的题目，并给出正确答案或最佳选择。"
         if self.system_prompt:
             prompt = f"{self.system_prompt}\n\n{prompt}"
 
@@ -168,7 +168,7 @@ class LLMClient:
 
     def _build_messages(self, image_base64: str,
                         user_prompt: Optional[str] = None) -> list:
-        prompt = user_prompt or "请识别这张截图中的测评题目，并给出正确答案或最佳选择。如果有多道题目，请逐一作答。"
+        prompt = user_prompt or "请识别这张截图中的题目，并给出正确答案或最佳选择。如果有多道题目，请逐一作答。"
 
         return [
             {"role": "system", "content": self.system_prompt},

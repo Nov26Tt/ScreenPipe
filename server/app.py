@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 config = Config()
-app = FastAPI(title="测评辅助系统")
+app = FastAPI(title="SnapStudy 学习助手")
 
 # 全局状态
 capture: Optional[Capture] = None
