@@ -1,0 +1,23 @@
+# Normalize line endings per file type.
+#
+# Windows batch files MUST use CRLF: cmd.exe locates "goto" labels by byte
+# offset, and an LF-only .bat makes it fail with
+# "The system cannot find the batch label specified".
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts MUST use LF.
+*.sh text eol=lf
+
+# Everything else stays LF.
+*.py   text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.txt  text eol=lf
+
+# Binary assets.
+*.jpg  binary
+*.jpeg binary
+*.png  binary
+*.ico  binary
