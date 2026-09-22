@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>测评辅助系统</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --accent: #3b82f6;
+      --accent2: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-bottom: 80px;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--accent2), var(--accent));
+      padding: 20px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    header .status-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot.green {
+      background: #4ade80;
+      box-shadow: 0 0 6px #4ade80;
+    }
+
+    .dot.red {
+      background: var(--red);
+    }
+
+    .dot.yellow {
+      background: var(--yellow);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.3;
+      }
+    }
+
+    .container {
+      padding: 12px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* 卡片样式 */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* 按钮 */
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      flex: 1;
+      min-width: 80px;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: #fff;
+      text-align: center;
+    }
+
+    .btn:active {
+      transform: scale(0.96);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+    }
+
+    .btn-success {
+      background: var(--green);
+    }
+
+    .btn-danger {
+      background: var(--red);
+    }
+
+    .btn-warning {
+      background: #f59e0b;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    /* 表单 */
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    /* 答案卡片 */
+    .answer-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 10px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .answer-time {
+      font-size: 12px;
+      color: var(--text2);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .answer-time::before {
+      content: "🕐";
+    }
+
+    .answer-content {
+      font-size: 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #334155;
+      color: #e2e8f0;
+      padding: 10px 24px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 100;
+      animation: toastIn 0.3s ease, toastOut 0.3s ease 2s forwards;
+      pointer-events: none;
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+      }
+    }
+
+    @keyframes toastOut {
+      to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(20px);
+      }
+    }
+
+    /* 底部导航 */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--card);
+      border-top: 1px solid var(--border);
+      display: flex;
+      padding: 6px 0;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .bottom-nav button {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 8px;
+      background: none;
+      border: none;
+      color: var(--text2);
+      font-size: 11px;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .bottom-nav button.active {
+      color: var(--accent);
+    }
+
+    .bottom-nav button .icon {
+      font-size: 20px;
+    }
+
+    /* 设置面板 */
+    .settings-panel {
+      display: none;
+    }
+
+    .settings-panel.show {
+      display: block;
+    }
+
+    /* 空状态 */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text2);
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    /* 滚动 */
+    .history-list {
+      max-height: calc(100vh - 340px);
+      overflow-y: auto;
+    }
+
+    /* 加载动画 */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      color: var(--text2);
+      font-size: 13px;
+    }
+
+    .loading .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* 接入提示 */
+    .tip-box {
+      background: #1a2a1a;
+      border: 1px solid #2d4a2d;
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #4ade80;
+    }
+
+    .tip-box strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .vision-warning {
+      background: #2d1f1f;
+      border: 1px solid #5c3030;
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #fca5a5;
+      line-height: 1.6;
+    }
+
+    .vision-warning strong {
+      color: #f87171;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>🎯 测评辅助系统</h1>
+    <div class="status-bar">
+      <span id="wsDot" class="dot red"></span>
+      <span id="statusText">等待连接...</span>
+    </div>
+  </header>
+
+  <div class="container">
+
+    <!-- 接入提示 -->
+    <div class="tip-box" id="tipBox">
+      <strong>📱 接入地址:</strong>
+      <span id="accessUrl">--</span>
+    </div>
+
+    <!-- 控制面板 -->
+    <div class="card" id="panelMain">
+      <div class="card-title">⚡ 控制面板</div>
+      <div class="btn-row">
+        <button class="btn btn-success" id="btnStart" onclick="startCapture()">▶ 开始监控</button>
+        <button class="btn btn-danger" id="btnStop" onclick="stopCapture()" disabled>⏹ 停止</button>
+      </div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-warning" onclick="captureOnce()">📸 手动截图</button>
+        <button class="btn btn-outline" onclick="clearHistory()">🗑 清空记录</button>
+      </div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="card settings-panel" id="panelSettings">
+      <div class="card-title">⚙️ 大模型设置</div>
+
+      <div class="vision-warning">
+        <strong>⚠️ 重要：必须使用支持图片识别的多模态（Vision）模型！</strong><br>
+        纯文本模型（deepseek-chat、moonshot-v1-8k 等）无法识别截图。<br>
+        ✅ 推荐：GPT-4o、qwen-vl-max、doubao-vision、glm-4v、MiniMax Token Plan (VLM)。
+      </div>
+
+      <div class="form-group">
+        <label>LLM 类型（快速选择）</label>
+        <select id="llmPreset" onchange="applyPreset()">
+          <option value="custom">自定义</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="qwen">通义千问 VL / 阿里</option>
+          <option value="doubao">豆包 Vision / 火山引擎</option>
+          <option value="zhipu">智谱 GLM-4V</option>
+          <option value="siliconflow">SiliconFlow (Qwen-VL)</option>
+          <option value="deepseek">DeepSeek (不支持图片)</option>
+          <option value="minimax">MiniMax Token Plan (VLM)</option>
+          <option value="moonshot">Moonshot/Kimi (不支持图片)</option>
+          <option value="ollama">Ollama 本地 (llava)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>API 地址</label>
+        <input type="text" id="apiBase" placeholder="https://api.deepseek.com/v1">
+      </div>
+
+      <div class="form-group">
+        <label>API Key / Token</label>
+        <input type="password" id="apiKey" placeholder="sk-xxxxxxxx">
+      </div>
+
+      <div class="form-group">
+        <label>模型名称</label>
+        <input type="text" id="model" placeholder="deepseek-chat">
+      </div>
+
+      <div class="form-group">
+        <label>截图间隔（秒）</label>
+        <input type="number" id="captureInterval" placeholder="5" min="2" max="60" value="5">
+      </div>
+
+      <div class="form-group">
+        <label>系统提示词</label>
+        <textarea id="systemPrompt" placeholder="格式：题号. 题目概括 - 正确选项内容。不列全部选项，不解析。例：3. 企业文化特征 - 独特性、稳定性"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveSettings()">💾 保存设置</button>
+        <button class="btn btn-outline" onclick="testConnection()">🔌 测试连接</button>
+      </div>
+    </div>
+
+    <!-- 答案历史 -->
+    <div class="card">
+      <div class="card-title">📋 答案记录 <span style="font-size:12px;color:var(--text2);font-weight:400"
+          id="historyCount">0条</span></div>
+      <div class="history-list" id="historyList">
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <div>暂无记录，开始截图后答案将显示在这里</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 底部导航 -->
+  <div class="bottom-nav">
+    <button class="active" id="navMain" onclick="switchTab('main')">
+      <span class="icon">📡</span> 控制台
+    </button>
+    <button id="navSettings" onclick="switchTab('settings')">
+      <span class="icon">⚙️</span> 设置
+    </button>
+  </div>
+
+  <script>
+    let ws = null;
+    let reconnectTimer = null;
+    let currentTab = 'main';
+
+    // ==================== WebSocket ====================
+    function connectWS() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${location.host}/ws`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        updateStatus('connected', '已连接 ✓');
+        if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+        loadHistory();
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleMessage(msg);
+      };
+
+      ws.onclose = () => {
+        updateStatus('disconnected', '连接断开，重连中...');
+        if (!reconnectTimer) {
+          reconnectTimer = setInterval(connectWS, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        updateStatus('disconnected', '连接错误');
+      };
+    }
+
+    function sendWS(data) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+      }
+    }
+
+    function handleMessage(msg) {
+      switch (msg.type) {
+        case 'answer':
+          addAnswerCard(msg.data, true);
+          break;
+        case 'status':
+          updateStatus(msg.data.capture_running ? 'capturing' : 'connected',
+            msg.data.message || (msg.data.capture_running ? '监控中...' : '已就绪'));
+          break;
+        case 'history':
+          renderHistory(msg.data);
+          break;
+        case 'capture_result':
+          if (msg.data.ok && !msg.data.skipped) {
+            addAnswerCard(msg.data.record, false);
+          }
+          break;
+        case 'error':
+          showToast('❌ ' + msg.data.message);
+          break;
+      }
+    }
+
+    // ==================== UI 更新 ====================
+    function updateStatus(state, text) {
+      const dot = document.getElementById('wsDot');
+      const statusText = document.getElementById('statusText');
+      statusText.textContent = text;
+
+      dot.className = 'dot';
+      switch (state) {
+        case 'connected': dot.classList.add('green'); break;
+        case 'capturing': dot.classList.add('yellow'); break;
+        default: dot.classList.add('red');
+      }
+
+      const btnStart = document.getElementById('btnStart');
+      const btnStop = document.getElementById('btnStop');
+      if (state === 'capturing') {
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+      } else {
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+      }
+    }
+
+    function addAnswerCard(record, prepend) {
+      const list = document.getElementById('historyList');
+      const empty = list.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const div = document.createElement('div');
+      div.className = 'answer-card';
+
+      let warningHtml = '';
+      if (record.vision_warning) {
+        warningHtml = `<div class="vision-warning"><strong>${escapeHtml(record.vision_warning)}</strong></div>`;
+      }
+
+      div.innerHTML = `
+        <div class="answer-time">${record.time}</div>
+        ${warningHtml}
+        <div class="answer-content">${escapeHtml(record.content)}</div>
+      `;
+
+      if (prepend) {
+        list.insertBefore(div, list.firstChild);
+      } else {
+        list.appendChild(div);
+      }
+
+      updateHistoryCount();
+      list.scrollTop = 0;
+    }
+
+    function renderHistory(records) {
+      const list = document.getElementById('historyList');
+      list.innerHTML = '';
+
+      if (!records || records.length === 0) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div>暂无记录</div></div>';
+      } else {
+        records.reverse().forEach(r => {
+          const div = document.createElement('div');
+          div.className = 'answer-card';
+
+          let warningHtml = '';
+          if (r.vision_warning) {
+            warningHtml = `<div class="vision-warning"><strong>${escapeHtml(r.vision_warning)}</strong></div>`;
+          }
+
+          div.innerHTML = `
+            <div class="answer-time">${r.time}</div>
+            ${warningHtml}
+            <div class="answer-content">${escapeHtml(r.content)}</div>
+          `;
+          list.appendChild(div);
+        });
+      }
+      updateHistoryCount();
+    }
+
+    function updateHistoryCount() {
+      const count = document.getElementById('historyList').querySelectorAll('.answer-card').length;
+      document.getElementById('historyCount').textContent = count + '条';
+    }
+
+    // ==================== 操作 ====================
+    async function startCapture() {
+      try {
+        const resp = await fetch('/api/start-capture', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+          updateStatus('capturing', '监控运行中...');
+          showToast('✅ 自动截图已启动');
+        }
+      } catch (e) {
+        showToast('❌ 启动失败: ' + e.message);
+      }
+    }
+
+    async function stopCapture() {
+      try {
+        const resp = await fetch('/api/stop-capture', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+          updateStatus('connected', '已停止监控');
+          showToast('⏹ 已停止');
+        }
+      } catch (e) {
+        showToast('❌ 停止失败');
+      }
+    }
+
+    async function captureOnce() {
+      showToast('正在截图分析...');
+      try {
+        const resp = await fetch('/api/capture-once', { method: 'POST' });
+        const data = await resp.json();
+        if (data.ok) {
+          if (data.skipped) {
+            showToast('屏幕内容未变化，已跳过');
+          } else {
+            showToast('分析完成');
+          }
+        } else {
+          showToast('失败: ' + (data.error || '分析失败'));
+        }
+      } catch (e) {
+        showToast('请求失败');
+      }
+    }
+
+    async function clearHistory() {
+      await fetch('/api/clear-history', { method: 'POST' });
+      document.getElementById('historyList').innerHTML =
+        '<div class="empty-state"><div class="icon">📭</div><div>暂无记录</div></div>';
+      updateHistoryCount();
+      showToast('🗑 已清空');
+    }
+
+    // ==================== 设置 ====================
+    async function loadSettings() {
+      try {
+        const resp = await fetch('/api/config');
+        const cfg = await resp.json();
+
+        document.getElementById('apiBase').value = cfg.llm?.api_base || '';
+        document.getElementById('apiKey').value = cfg.llm?.api_key || '';
+        document.getElementById('model').value = cfg.llm?.model || '';
+        document.getElementById('systemPrompt').value = cfg.llm?.system_prompt || '';
+        document.getElementById('captureInterval').value = cfg.capture?.interval || 5;
+      } catch (e) {
+        console.error('加载设置失败', e);
+      }
+    }
+
+    async function saveSettings() {
+      const newConfig = {
+        llm: {
+          api_base: document.getElementById('apiBase').value.trim(),
+          api_key: document.getElementById('apiKey').value.trim(),
+          model: document.getElementById('model').value.trim(),
+          system_prompt: document.getElementById('systemPrompt').value.trim()
+        },
+        capture: {
+          interval: parseInt(document.getElementById('captureInterval').value) || 5
+        }
+      };
+
+      try {
+        const resp = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newConfig)
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          showToast('✅ 设置已保存');
+        } else {
+          showToast('❌ 保存失败');
+        }
+      } catch (e) {
+        showToast('❌ 保存失败: ' + e.message);
+      }
+    }
+
+    function applyPreset() {
+      const preset = document.getElementById('llmPreset').value;
+      const presets = {
+        openai: { base: 'https://api.openai.com/v1', model: 'gpt-4o' },
+        qwen: { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-vl-max' },
+        doubao: { base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-1.5-vision-pro-32k' },
+        zhipu: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4v' },
+        siliconflow: { base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+        minimax: { base: 'https://api.minimax.chat/v1', model: 'MiniMax-M2.7' },
+        deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+        moonshot: { base: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k-vision' },
+        ollama: { base: 'http://localhost:11434/v1', model: 'llava:latest' }
+      };
+      // MiniMax Token Plan 已通过 VLM 端点支持图片识别，deepseek/moonshot 不支持
+
+      if (preset !== 'custom' && presets[preset]) {
+        document.getElementById('apiBase').value = presets[preset].base;
+        document.getElementById('model').value = presets[preset].model;
+      }
+    }
+
+    async function testConnection() {
+      showToast('正在测试连接...');
+      const llmConfig = {
+        api_base: document.getElementById('apiBase').value.trim(),
+        api_key: document.getElementById('apiKey').value.trim(),
+        model: document.getElementById('model').value.trim()
+      };
+
+      if (!llmConfig.api_base || !llmConfig.api_key || !llmConfig.model) {
+        showToast('请先填写 API 地址、API Key 和模型名称');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/test-llm-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ llm: llmConfig })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+          showToast('连接成功！回复: ' + data.reply);
+        } else {
+          showToast('连接失败: ' + (data.error || '未知错误'));
+        }
+      } catch (e) {
+        showToast('请求失败: ' + e.message);
+      }
+    }
+
+    async function loadHistory() {
+      sendWS({ action: 'get_history' });
+    }
+
+    // ==================== 标签切换 ====================
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('navMain').classList.toggle('active', tab === 'main');
+      document.getElementById('navSettings').classList.toggle('active', tab === 'settings');
+
+      document.getElementById('panelMain').style.display = tab === 'main' ? '' : 'none';
+      document.getElementById('panelSettings').classList.toggle('show', tab === 'settings');
+      document.getElementById('tipBox').style.display = tab === 'main' ? '' : 'none';
+      // 只保留答案记录卡片可见
+      document.querySelectorAll('.container > .card:last-child').forEach(el => {
+        el.style.display = '';
+      });
+    }
+
+    // ==================== 工具函数 ====================
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
+    // ==================== 初始化 ====================
+    async function init() {
+      await loadSettings();
+      connectWS();
+
+      // 获取接入地址
+      try {
+        const resp = await fetch('/api/ip');
+        const data = await resp.json();
+        document.getElementById('accessUrl').textContent =
+          `http://${data.ip}:${data.port}`;
+      } catch (e) {
+        document.getElementById('accessUrl').textContent = location.href;
+      }
+    }
+
+    init();
+  </script>
+</body>
+
+</html>
