@@ -31,16 +31,19 @@ config.local.yaml
 !.env.example
 
 # ===== 运行时产物 =====
+# 注意：这条会同时匹配 docs/screenshots/ —— 但那目录放的是 README
+# 用的界面截图，是要提交的。所以下面用 ! 显式反选。
 screenshots/
+!docs/screenshots/
+!docs/screenshots/**
 *.log
+
+# SQLite 记录数据库（含用户数据，不应提交）
 *.db
 
-# ===== 系统 /编辑器临时文件 =====
+# ===== 系统 / 编辑器临时文件 =====
 .DS_Store
 Thumbs.db
 *.tmp
 *.bak
 *~
-
-# SQLite 记录数据库（含用户数据，不应提交）
-*.db
