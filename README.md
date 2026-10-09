@@ -7,9 +7,25 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-46%20passed-success)](tests/)
+[![tests](https://img.shields.io/badge/tests-90%20passed-success)](tests/)
 
-<!-- 首屏放一张真实运行截图；没有截图的仓库在GitHub 上很难留住人 -->
+<!-- 首屏放一张真实运行截图；没有截图的仓库在 GitHub 上很难留住人 -->
+
+## 功能
+
+| 能力 | 说明 |
+| --- | --- |
+| 自动截屏识别 | 按间隔自动截图，**画面无变化时跳过模型调用**（省 Token 的关键） |
+| 手机实时同步 | WebSocket 推送到手机浏览器，电脑在做什么手机就能看到 |
+| 记录持久化 | SQLite 落盘，重启后仍能翻看；**失败也留痕**，便于排查 Key 过期 |
+| 截图与记录绑定 | 点开缩略图即可核对「模型当时看到的是什么」 |
+| 自动清理 | 截图按**天数 + 张数**双阈值回收，不让磁盘无限增长 |
+| 区域预设 | `left_half` / `right_half` / `center`，只截目标区域省Token 也降噪 |
+| 成本可见 | 每条记录带耗时与图片体积 |
+| markdown 渲染 | 表格、列表、代码块正常显示（手写实现，无 CDN 依赖） |
+| JSON 输出模式 | 结果可被程序直接消费，而不只是给人阅读 |
+| 配置热更新 | 网页端改配置立即生效，密钥不回显明文 |
+| 视觉能力提醒 | 检测到模型未识图时主动告警，避免误用纯文本模型 |
 
 ---
 
@@ -60,7 +76,68 @@ if current == self._last_hash:
 
 效果：连续观看同一个页面 10 分钟，可能只触发 1~2 次模型调用。
 
-### 2. 密钥永不出进程
+### 2. 记录与截图绑定，而不是各存各的
+
+早期版本截图每轮落盘、记录只存文本，两者没有任何关联字段 ——
+结果是磁盘上堆了几百张图（实测 33MB）却**既不能展示、也无法随记录一起删除**，
+纯浪费空间。
+
+现在 `capture.grab()` 返回一个 `Screenshot` 对象，把图片数据、文件名、
+尺寸、体积放在一起；记录里的 `screenshot` 字段保存文件名：
+
+```python
+shot = capture.grab(save_to_disk=True)     # 拿到 data + filename + size_kb
+record = {
+    "screenshot": shot.filename,             # 与磁盘文件绑定
+    "size_kb": shot.size_kb,                 # 成本可归因
+    "elapsed": 6.21,                         # 耗时可归因
+    "ok": True,                              # 失败也留痕
+}
+```
+
+带来的能力：界面上点开缩略图即可核对「模型当时看到的是什么」；
+清空记录时连同截图一起删，不留孤儿文件。
+
+### 3. 磁盘不会无限增长
+
+`RetentionPolicy` 用**双阈值**清理 —— 只按天数则高频运行时单日文件数依然
+可能很大；只按张数则低频运行时占用会持续数月不回。
+
+```python
+policy = RetentionPolicy("screenshots", max_days=7, max_files=500)
+removed, freed = policy.purge()   # 任一阈值超出即从最旧开始删
+```
+
+只匹配 `screenshot_*.jpg`，不会误删你放在同目录的其他文件。
+
+### 4. 记录持久化：标准库 sqlite3
+
+选它而不是 JSON 文件或引入 ORM：
+
+- **零新依赖** —— `sqlite3` 是标准库，保持「无构建、开箱即跑」
+- 单文件、零服务，按时间倒序取 N 条就是一条 SQL
+- 内存里仍保留一份 `deque` 作热缓存，读路径不受磁盘 IO 影响
+
+冷启动时回填到内存，所以**重启后仍能翻看之前的记录**。
+
+失败也会落库（`ok=0` + `error` 类型）。像 Key 过期这种问题此前只弹一次
+toast 就消失，现在能在历史里回看「昨天失败的都是 401」。
+
+### 5. 区域预设：省Token 也降噪
+
+全屏截图 1920×1080 约 188KB，而多数场景只关心屏幕上的一半。
+预设由程序按当前分辨率**实时计算**坐标，用户无需手填：
+
+| 预设 | 适用 |
+| --- | --- |
+| `full` | 主显示器全屏（默认） |
+| `left_half` | 「左文档 / 右 AI」的并排布局 |
+| `right_half` | 右半屏 |
+| `center` | 居中 1200×800，聚焦对话内容 |
+
+换区域会重置像素指纹 —— 否则首帧会被误判为「内容未变化」而跳过识别。
+
+### 6. 密钥永不出进程
 
 服务监听 `0.0.0.0` 供手机访问，且**不内置认证** —— 所以密钥泄露是真实风险。
 `config.py` 因此把输出分成两个出口：
@@ -73,12 +150,15 @@ cfg.to_public_dict()        # api_key 掩码为 sk-a...wxyz，唯一允许走 HT
 配套的前端逻辑：密钥输入框**不回填**明文，留空表示"沿用已保存的密钥"；
 后端收到掩码形态的 Key 会直接忽略，避免把真密钥覆盖成一串乱码。
 
-### 3. 单一模型抽象
+同理，`/api/screenshot/{name}` 是唯一能读到磁盘的入口，
+做了路径穿越校验（只接受纯文件名 + 解析后二次确认仍在截图目录内）。
+
+### 7. 单一模型抽象
 
 任何 OpenAI 兼容且支持图片输入的服务都能接入，换模型只改配置不改代码。
 MiniMax 的 VLM 走独立端点，客户端会自动识别域名并切换协议。
 
-### 4. 手动触发强制截图
+### 8. 手动触发强制截图
 
 自动模式靠变更检测省Token，但代价是"题没变就什么都拿不到"。
 因此手动触发会先 `reset_hash()`，保证每次点击都有结果。
@@ -167,11 +247,16 @@ python main.py
 | `capture.quality` | JPEG 质量（1-95），越低体积越小 | `60` |
 | `capture.region` | 截屏区域 `[left, top, width, height]` | 全屏 |
 | `capture.save_dir` | 截图落盘目录，留空用 `screenshots/` | `screenshots/` |
-| `history.max_records` | 内存中保留的记录条数（超出自动淘汰） | `200` |
+| `capture.region_preset` | 区域预设 `full`/`left_half`/`right_half`/`center` | `full` |
+| `history.max_records` | 保留的记录条数（内存与数据库同此上限） | `200` |
+| `retention.max_days` | 截图保留天数，超出自动清理 | `7` |
+| `retention.max_files` | 截图保留张数，超出自动清理 | `500` |
+| `storage.db_path` | SQLite 路径，留空用 `records.db` | `records.db` |
 | `llm.api_base` | OpenAI 兼容地址，程序会拼接 `/chat/completions` | DeepSeek |
 | `llm.api_key` | 密钥（`config.yaml` 已被 gitignore） | 占位符 |
 | `llm.model` | **必须是视觉模型** | `deepseek-flash` |
 | `llm.system_prompt` | 留空则用内置提示词 | 内置 |
+| `llm.json_mode` | 强制 JSON 输出（部分服务不支持，遇 400 请关） | `false` |
 | `server.host` | 监听地址，手机访问需保持 `0.0.0.0` | `0.0.0.0` |
 | `server.port` | 监听端口，被占用时自动向后探测 | `8765` |
 
@@ -183,32 +268,40 @@ python main.py
 .
 ├── main.py                    # 入口（含Windows 终端编码兜底）
 ├── config.py                  # 配置读写 + 密钥脱敏
-├── capture.py                 # 屏幕捕获 + 像素指纹变更检测
+├── capture.py                 # 屏幕捕获 + 像素指纹 + 区域预设 + 保留策略
 ├── llm_client.py              # 视觉模型客户端（OpenAI 兼容 + MiniMax）
+├── store.py                   # SQLite 记录持久化（标准库，零新依赖）
 ├── launcher.py                # 一键启动器实现（由 start.bat 调用）
 ├── start.bat                  # Windows 唯一启动入口
 ├── pyproject.toml             # 包元数据与依赖声明
 ├── config.example.yaml        # 配置模板
 ├── requirements.txt           # 依赖清单
+├── records.db                 # 运行时生成（已 gitignore）
 ├── server/
 │   ├── app.py                 # FastAPI 服务：REST + WebSocket 编排
 │   └── templates/index.html   # 移动端界面（单文件，无构建步骤）
-└── tests/                     # 46 个单元 / 集成测试
+└── tests/                     # 90 个单元 / 集成测试
 ```
 
-职责边界：`capture.py` 管怎么截屏，`llm_client.py` 管怎么调模型，
-`server/app.py` 只做编排与对外暴露。
+职责边界：`capture.py` 管怎么截屏、`llm_client.py` 管怎么调模型、
+`store.py` 管怎么存、`server/app.py` 只做编排与对外暴露 ——
+`app.py` 里没有任何 SQL 与文件删除细节。
 
 ## 开发
 
 ```bash
 pip install -e ".[dev]"
-pytest                    # 46 个用例
+pytest                    # 90 个用例
 pytest --cov              # 覆盖率
 ```
 
 测试覆盖了几处容易回归的地方：密钥脱敏、掩码回显保护、响应结构兼容、
-有界历史淘汰、端口避让。
+有界历史淘汰、端口避让、**前后端端点契约**、截图保留策略、SQLite 往返与重启回填。
+
+其中一条值得单独说：`test_front_end_referenced_endpoints_all_exist`
+用正则抓出页面里所有 `fetch('/api/...')` 调用，与服务端实际路由比对。
+它来自一次真实事故 —— 重写 `server/app.py` 时漏掉了 `/api/ip` 端点，
+页面一直显示「地址获取失败」，而当时所有测试都是绿的。
 
 ## 已知限制
 
@@ -216,7 +309,7 @@ pytest --cov              # 覆盖率
   Python 代码本身跨平台，但入口脚本没有做 macOS / Linux 适配
 - **服务无认证**：默认监听 `0.0.0.0`，同网段 anyone 都能访问。
   **请勿直接暴露到公网**；需要远程访问请自行加反向代理 + TLS + 访问控制
-- **历史仅存内存**：重启即丢失，没有做持久化
+- **历史与截图同目录**：清空记录会一并删除截图，暂不支持只删记录保留图片
 - **`system_prompt` 需按场景改**：内置提示词偏"解题"，
   换场景时记得改，否则模型会按题目格式输出
 

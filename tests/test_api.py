@@ -124,6 +124,48 @@ class TestApiSurface:
         # 兜底值之外都应是真实局域网地址
         assert body["ip"].count(".") == 3
 
+    def test_screenshot_endpoint_rejects_path_traversal(self, client):
+        """服务无认证且监听 0.0.0.0，这是唯一读磁盘的入口，必须守住。"""
+        # 各类穿越尝试都应被拒——不能读到 config.yaml
+        for evil in (
+            "..%2F..%2Fconfig.yaml",
+            "..%5C..%5Cconfig.yaml",
+            "%2e%2e%2fconfig.yaml",
+        ):
+            assert client.get(f"/api/screenshot/{evil}").status_code in (400, 404)
+
+    def test_screenshot_endpoint_requires_jpg(self, client):
+        """只接受 .jpg，其他扩展名一律拒绝。"""
+        assert client.get("/api/screenshot/config.yaml").status_code == 400
+        assert client.get("/api/screenshot/records.db").status_code == 400
+
+    def test_missing_screenshot_returns_404(self, client):
+        assert client.get("/api/screenshot/screenshot_nonexistent.jpg").status_code == 404
+
+    def test_stats_endpoint_shape(self, client):
+        """/api/stats 是成本归因的入口，字段不能缺。"""
+        body = client.get("/api/stats").json()
+        assert "storage" in body
+        assert "screenshots" in body
+        assert "db_path" in body
+        # 截图统计应含保留张数与占用
+        assert "kept" in body["screenshots"]
+        assert "used_mb" in body["screenshots"]
+
+    def test_clear_history_reports_screenshot_count(self, client):
+        """清空时应告知删了多少张图，前端要如实告诉用户。"""
+        body = client.post("/api/clear-history").json()
+        assert body["ok"] is True
+        assert isinstance(body.get("screenshots_removed"), int)
+
+    def test_status_includes_new_subsystems(self, client):
+        """报头要用到存储与截图信息，status 必须带上。"""
+        body = client.get("/api/status").json()
+        assert "storage" in body
+        assert "screenshots" in body
+        assert "history_limit" in body
+        assert "region" in body
+
     def test_front_end_referenced_endpoints_all_exist(self):
         """页面里 fetch 到的每个 /api 路径都必须在服务端真实存在。"""
         import re
