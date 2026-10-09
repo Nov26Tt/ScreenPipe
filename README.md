@@ -122,7 +122,7 @@ python main.py
 
 | 服务商 | 模型 | `api_base` | 备注 |
 | --- | --- | --- | --- |
-| DeepSeek | `deepseek-flash` | `https://api.deepseek.com` | **默认值**，上下文 1M |
+| DeepSeek | `deepseek-flash` | `https://api.deepseek.com/v1` | **默认值**，上下文 1M |
 | 智谱 | `glm-4.6v-flash` | `https://open.bigmodel.cn/api/paas/v4` | 免费档 |
 | 阿里百炼 | `qwen3-vl-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 新用户限免 |
 | Ollama 本地 | `qwen3-vl:8b` | `http://localhost:11434/v1` | **图片不出本机** |

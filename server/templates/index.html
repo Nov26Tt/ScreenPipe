@@ -522,7 +522,7 @@
 
       <div class="form-group">
         <label>API 地址</label>
-        <input type="text" id="apiBase" placeholder="https://api.deepseek.com">
+        <input type="text" id="apiBase" placeholder="https://api.deepseek.com/v1">
       </div>
 
       <div class="form-group">
@@ -982,7 +982,7 @@
       // 模型名均取自各厂商官方文档（核实于 2026-10）。
       //厂商迭代很快，若调用返回 model not found，请以官方模型列表为准。
       const presets = {
-        deepseek:   { base: 'https://api.deepseek.com', model: 'deepseek-flash' },
+        deepseek:   { base: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
         zhipu_free: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v-flash' },
         zhipu:      { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v' },
         qwen_free:  { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-flash' },

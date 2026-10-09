@@ -23,7 +23,7 @@ DEFAULTS: Dict[str, Any] = {
     "llm": {
         # deepseek-flash（实为 DeepSeek-V4.1-Flash）原生支持图片输入，
         # 上下文 1M，是本项目的默认模型。用法见 README「选择视觉模型」。
-        "api_base": "https://api.deepseek.com",
+        "api_base": "https://api.deepseek.com/v1",
         "api_key": "your-api-key-here",
         "model": "deepseek-flash",
         "system_prompt": (

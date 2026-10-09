@@ -32,7 +32,7 @@ llm:
   # 默认用 DeepSeek：deepseek-flash（实为 V4.1-Flash）原生支持图片输入，
   # 上下文 1M。换成智谱 / 阿里百炼 / 火山方舟 / Moonshot / 本地 Ollama
   # 只需改这里和 model。
-  api_base: https://api.deepseek.com
+  api_base: https://api.deepseek.com/v1
   api_key: your-api-key-here
   # 必须是支持图片输入的视觉（多模态）模型，纯文本模型无法处理截图。
   # 免费可选：deepseek-flash、glm-4.6v-flash
