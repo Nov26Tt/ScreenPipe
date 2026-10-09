@@ -10,14 +10,26 @@
 *.sh text eol=lf
 
 # Everything else stays LF.
-*.py   text eol=lf
-*.md   text eol=lf
-*.yaml text eol=lf
-*.yml  text eol=lf
-*.txt  text eol=lf
+# 不指定 eol 的话，Windows 上 clone 会得到 CRLF，导致
+# "本地能跑、别人跑不了"的经典问题。
+*.py       text eol=lf
+*.md       text eol=lf
+*.yaml     text eol=lf
+*.yml      text eol=lf
+*.txt      text eol=lf
+*.toml     text eol=lf
+*.json     text eol=lf
+*.html     text eol=lf
+*.css      text eol=lf
+*.js       text eol=lf
+*.cfg      text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
 
 # Binary assets.
 *.jpg  binary
 *.jpeg binary
 *.png  binary
+*.gif  binary
 *.ico  binary
+*.pdf  binary
