@@ -12,6 +12,44 @@ import pytest
 from capture import REGION_PRESETS, Capture, RetentionPolicy
 
 
+class FakeShot:
+    """替身：模拟 mss 的截屏结果（BGRX 四字节排列）。"""
+
+    def __init__(self, width: int = 320, height: int = 240, rgb=(40, 90, 140)):
+        self.size = (width, height)
+        r, g, b = rgb
+        self.bgra = b"".join(
+            bytes([b, g, r, 255]) for _ in range(width * height)
+        )
+
+
+@pytest.fixture
+def fake_screen(monkeypatch):
+    """把 Capture 的底层 grab 换成固定图像。
+
+    这样测试既不依赖真实屏幕（CI / 无图形环境的容器里也能跑），
+    也不会被光标闪烁、状态栏动画干扰 —— 那正是原先在
+    Linux CI 上失败的原因。
+    """
+    state = {"calls": 0, "color": (40, 90, 140)}
+
+    class _FakeMss:
+        monitors = [
+            {"left": 0, "top": 0, "width": 1920, "height": 1080},
+            {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        ]
+
+        def grab(self, monitor):
+            state["calls"] += 1
+            return FakeShot(rgb=state["color"])
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("capture._MSS_FACTORY", lambda: _FakeMss())
+    return state
+
+
 def make_shot(directory: Path, name: str, age_days: float = 0, size: int = 1024,
               age_hours: float = None):
     """造一张指定大小、指定"年龄"的假截图。
@@ -189,7 +227,7 @@ class TestRegionPresets:
 
 
 class TestScreenshotMetadata:
-    def test_grab_returns_metadata(self, tmp_path):
+    def test_grab_returns_metadata(self, tmp_path, fake_screen):
         c = Capture(save_dir=str(tmp_path / "shots"), quality=60)
         try:
             shot = c.grab(save_to_disk=True)
@@ -202,30 +240,15 @@ class TestScreenshotMetadata:
         finally:
             c.close()
 
-    def test_second_grab_skipped_when_unchanged(self, tmp_path, monkeypatch):
+    def test_second_grab_skipped_when_unchanged(self, tmp_path, fake_screen):
         """画面未变时应返回空结果，让调用方跳过模型调用。
 
-        不直接用真实屏幕：测试机上光标闪烁、状态栏动画会让两次截图
-        真的不同。这里用固定图像替换底层 grab，隔离出被测逻辑。
+        依赖 fake_screen 提供固定图像而非真实屏幕 ——
+        测试机上光标闪烁、状态栏动画会让两次截图真的不同，
+        而 CI 环境根本没有显示器。
         """
-        from PIL import Image
-
-        static = Image.new("RGB", (320, 240), (40, 90, 140))
         c = Capture(save_dir=str(tmp_path / "shots"))
         try:
-            class FakeShot:
-                size = (320, 240)
-
-                def __init__(self):
-                    self.bgra = bytes(static.tobytes())[: 320 * 240 * 3]
-                    # 补alpha 通道，mss 的 BGRA 每像素 4 字节
-                    self.bgra = b"".join(
-                        bytes([b, g, r, 255])
-                        for r, g, b in [(40, 90, 140)] * (320 * 240)
-                    )
-
-            monkeypatch.setattr(c._sct, "grab", lambda monitor: FakeShot())
-
             first = c.grab()
             assert not first.is_empty
             assert first.width == 320 and first.height == 240
@@ -239,7 +262,7 @@ class TestScreenshotMetadata:
         finally:
             c.close()
 
-    def test_forced_grab_bypasses_change_detection(self, tmp_path):
+    def test_forced_grab_bypasses_change_detection(self, tmp_path, fake_screen):
         """手动触发必须无视"未变化"判定。"""
         c = Capture(save_dir=str(tmp_path / "shots"))
         try:
@@ -250,7 +273,7 @@ class TestScreenshotMetadata:
         finally:
             c.close()
 
-    def test_filenames_do_not_collide_within_same_second(self, tmp_path):
+    def test_filenames_do_not_collide_within_same_second(self, tmp_path, fake_screen):
         """毫秒级命名，避免高频截图互相覆盖。"""
         c = Capture(save_dir=str(tmp_path / "shots"))
         try:
@@ -259,7 +282,7 @@ class TestScreenshotMetadata:
         finally:
             c.close()
 
-    def test_base64_property(self, tmp_path):
+    def test_base64_property(self, tmp_path, fake_screen):
         c = Capture(save_dir=str(tmp_path / "shots"))
         try:
             shot = c.grab(save_to_disk=True)
@@ -274,3 +297,137 @@ class TestScreenshotMetadata:
 
         assert Screenshot().base64 == ""
         assert Screenshot().is_empty is True
+
+
+class TestHeadlessEnvironment:
+    """无显示器环境（Linux CI / 容器）下的行为。
+
+    这组用例来自一次真实的 CI 失败：GitHub 的 ubuntu runner
+    没有 X11，mss 实例化即抛异常，而当时 Capture 在 __init__ 里
+    就创建了 mss 实例 —— 结果所有纯逻辑测试（区域预设换算、
+    指纹计算、保留策略）被连带拖垮。
+
+    修法是把 mss 改为惰性初始化。这些用例就是防它退回去的。
+    """
+
+    @pytest.fixture
+    def broken_mss(self, monkeypatch):
+        """模拟 mss 在无图形环境时的实例化失败。"""
+
+        def _boom():
+            raise RuntimeError("no DISPLAY")
+
+        monkeypatch.setattr("capture._MSS_FACTORY", _boom)
+
+    def test_construction_does_not_touch_mss(self, broken_mss):
+        """构造 Capture 不应触发 mss —— 否则无屏幕环境直接构造失败。"""
+        c = Capture()
+        try:
+            assert c._sct is None
+        finally:
+            c.close()
+
+    def test_has_display_reports_false_without_mss(self, broken_mss):
+        c = Capture()
+        try:
+            assert c.has_display() is False
+        finally:
+            c.close()
+
+    def test_region_preset_works_without_display(self, broken_mss):
+        """区域换算只依赖尺寸比例，不需要真实截屏能力。
+
+        这是最容易误判的一点：以为「没有显示器就什么都做不了」，
+        其实坐标换算完全可以在无头环境下验证。
+        """
+        c = Capture()
+        try:
+            left = c.resolve_region_preset("left_half")
+            center = c.resolve_region_preset("center")
+            assert left is not None and left[2] > 0
+            assert center is not None and center[2] > 0
+            # 回退到默认分辨率也要给出合理坐标，不能是 None 或 0
+            assert center[2] == 1200 and center[3] == 800
+        finally:
+            c.close()
+
+    def test_grab_raises_actionable_error(self, broken_mss):
+        """真正需要截屏时应给出可操作的错误信息，而不是裸的底层异常。"""
+        c = Capture()
+        try:
+            with pytest.raises(RuntimeError, match="图形环境"):
+                c.grab()
+        finally:
+            c.close()
+
+    def test_close_is_safe_when_mss_never_created(self, broken_mss):
+        """未创建过 mss 就close 不应抛异常。"""
+        c = Capture()
+        c.close()  # 不应报错
+
+
+class TestHeadlessEnvironment:
+    """无显示器环境（Linux CI / 容器）下的行为。
+
+    这组用例来自一次真实的 CI 失败：GitHub 的 ubuntu runner
+    没有 X11，mss 实例化即抛异常，而当时 Capture 在 __init__ 里
+    就创建了 mss 实例 —— 结果所有纯逻辑测试（区域预设换算、
+    指纹计算、保留策略）被连带拖垮。
+
+    修法是把 mss 改为惰性初始化。这些用例就是防它退回去的。
+    """
+
+    @pytest.fixture
+    def broken_mss(self, monkeypatch):
+        """模拟 mss 在无图形环境时的实例化失败。"""
+
+        def _boom():
+            raise RuntimeError("no DISPLAY")
+
+        monkeypatch.setattr("capture._MSS_FACTORY", _boom)
+
+    def test_construction_does_not_touch_mss(self, broken_mss):
+        """构造 Capture 不应触发 mss —— 否则无屏幕环境直接构造失败。"""
+        c = Capture()
+        try:
+            assert c._sct is None
+        finally:
+            c.close()
+
+    def test_has_display_reports_false_without_mss(self, broken_mss):
+        c = Capture()
+        try:
+            assert c.has_display() is False
+        finally:
+            c.close()
+
+    def test_region_preset_works_without_display(self, broken_mss):
+        """区域换算只依赖尺寸比例，不需要真实截屏能力。
+
+        这是最容易误判的一点：以为「没有显示器就什么都做不了」，
+        其实坐标换算完全可以在无头环境下验证。
+        """
+        c = Capture()
+        try:
+            left = c.resolve_region_preset("left_half")
+            center = c.resolve_region_preset("center")
+            assert left is not None and left[2] > 0
+            assert center is not None and center[2] > 0
+            # 回退到默认分辨率也要给出合理坐标，不能是 None 或 0
+            assert center[2] == 1200 and center[3] == 800
+        finally:
+            c.close()
+
+    def test_grab_raises_actionable_error(self, broken_mss):
+        """真正需要截屏时应给出可操作的错误信息，而不是裸的底层异常。"""
+        c = Capture()
+        try:
+            with pytest.raises(RuntimeError, match="图形环境"):
+                c.grab()
+        finally:
+            c.close()
+
+    def test_close_is_safe_when_mss_never_created(self, broken_mss):
+        """未创建过 mss 就close 不应抛异常。"""
+        c = Capture()
+        c.close()  # 不应报错

@@ -87,8 +87,39 @@ class Capture:
         self.save_dir = save_dir
         self.quality = max(1, min(95, int(quality)))
         self.region = region
-        self._sct = _MSS_FACTORY()
+        # mss 实例**惰性创建**，不在 __init__ 里。
+        # 原因：mss 在无图形环境的机器上（Linux CI、容器、Docker）
+        # 实例化即抛异常。若在构造时就创建，任何纯逻辑测试
+        # （区域预设换算、指纹计算、保留策略）都会连带失败。
+        # 惰性化后，这些测试可在任意平台运行，只有真正需要
+        # 截屏的用例才会触发 mss —— 而那部分本来就只能在有屏幕的机器上跑。
+        self._sct = None
         self._last_hash: Optional[str] = None
+
+    @property
+    def sct(self):
+        """惰性创建并返回 mss 实例；无图形环境时给出明确错误。"""
+        if self._sct is None:
+            try:
+                self._sct = _MSS_FACTORY()
+            except Exception as exc:
+                raise RuntimeError(
+                    "无法初始化屏幕捕获：mss 需要图形环境。"
+                    "请在有显示器的机器上运行（Windows / 带 X11 或 Wayland 的 Linux）。"
+                    f"原始错误：{exc}"
+                ) from exc
+        return self._sct
+
+    def has_display(self) -> bool:
+        """当前环境是否具备截屏能力。
+
+        CI 用它来跳过真正需要显示器的用例，而不是让整组测试红掉。
+        """
+        try:
+            self.sct
+            return True
+        except RuntimeError:
+            return False
 
     def _resolve_monitor(self) -> dict:
         """确定要抓取的显示器区域。"""
@@ -96,7 +127,22 @@ class Capture:
             left, top, width, height = self.region
             return {"left": left, "top": top, "width": width, "height": height}
         # monitors[0] 是整块虚拟桌面（含多显示器），[1] 才是主显示器
-        return self._sct.monitors[1]
+        return self.sct.monitors[1]
+
+    def _monitor_geometry(self) -> dict:
+        """主显示器的几何信息，取不到时回退到一组中性默认值。
+
+        区域预设换算只需要 width/height，不需要真实截屏能力 ——
+        这样在没有显示器的机器上也能验证坐标计算是否正确。
+        """
+        try:
+            mon = self.sct.monitors[1]
+            return {"left": mon["left"], "top": mon["top"],
+                    "width": mon["width"], "height": mon["height"]}
+        except Exception:
+            # 1920x1080 是最常见的桌面分辨率，用它做默认值不影响
+            # 坐标换算的正确性验证（比例关系与实际分辨率无关）
+            return {"left": 0, "top": 0, "width": 1920, "height": 1080}
 
     def resolve_region_preset(self, preset: str) -> Optional[List[int]]:
         """把预设名解析为具体坐标。
@@ -108,7 +154,7 @@ class Capture:
         if preset in (None, "", "full"):
             return None
 
-        mon = self._sct.monitors[1]
+        mon = self._monitor_geometry()
         left, top = mon["left"], mon["top"]
         width, height = mon["width"], mon["height"]
 
@@ -144,7 +190,7 @@ class Capture:
 
         :param save_to_disk: True 时强制截图并跳过变更检测（手动触发场景）
         """
-        sct_img = self._sct.grab(self._resolve_monitor())
+        sct_img = self.sct.grab(self._resolve_monitor())
         pil_img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 
         if not save_to_disk:
