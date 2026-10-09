@@ -362,6 +362,73 @@
       margin-bottom: 12px;
     }
 
+    /* 元信息行：耗时、图片体积、尺寸，用于成本归因 */
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      margin-bottom: 14px;
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 11.5px;
+      color: var(--text-60);
+    }
+
+    .meta-row span {
+      white-space: nowrap;
+    }
+
+    /* 缩略图：让「模型当时看到的是什么」可核对 */
+    .shot-thumb {
+      display: block;
+      width: 100%;
+      margin-bottom: 14px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--hairline);
+      cursor: zoom-in;
+      transition: border-color var(--slow) var(--ease);
+    }
+
+    .shot-thumb:hover,
+    .shot-thumb:focus-visible {
+      border-color: var(--hairline-strong);
+    }
+
+    /* 点击放大：原生 dialog，不引入任何依赖 */
+    .lightbox {
+      border: none;
+      padding: 0;
+      background: transparent;
+      max-width: 100vw;
+      max-height: 100vh;
+    }
+
+    .lightbox::backdrop {
+      background: rgba(12, 13, 16, .94);
+    }
+
+    .lightbox img {
+      display: block;
+      max-width: 100vw;
+      max-height: 100vh;
+      border-radius: var(--r-sm);
+    }
+
+    /* 失败记录：与成功记录视觉上可区分（不只靠颜色，还有图标与文案） */
+    .answer-card.is-failed {
+      border-color: rgba(210, 112, 92, .32);
+      background: rgba(210, 112, 92, .07);
+    }
+
+    .failed-tag {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 8px;
+      font-size: 11px;
+      color: var(--danger);
+      border: 1px solid rgba(210, 112, 92, .4);
+      border-radius: var(--r-full);
+    }
+
     .answer-content {
       max-width: var(--measure);
       font-size: 15px;
@@ -369,6 +436,100 @@
       color: var(--text-80);
       white-space: pre-wrap;
       word-break: break-word;
+    }
+
+    /* markdown 渲染后的排版（结果若是 JSON 也能保持可读） */
+    .answer-content.rich {
+      white-space: normal;
+    }
+
+    .answer-content.rich h1,
+    .answer-content.rich h2,
+    .answer-content.rich h3 {
+      font-family: "Songti SC", "Source Han Serif SC", "Noto Serif SC", serif;
+      font-weight: 600;
+      color: var(--text);
+      margin: 18px 0 8px;
+      line-height: 1.35;
+    }
+
+    .answer-content.rich h1 {
+      font-size: 19px;
+    }
+
+    .answer-content.rich h2 {
+      font-size: 17px;
+    }
+
+    .answer-content.rich h3 {
+      font-size: 15px;
+    }
+
+    .answer-content.rich ul,
+    .answer-content.rich ol {
+      margin: 8px 0;
+      padding-left: 22px;
+      max-width: var(--measure);
+    }
+
+    .answer-content.rich li {
+      margin: 4px 0;
+    }
+
+    .answer-content.rich code {
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 13px;
+      color: var(--amber);
+      background: rgba(232, 176, 75, .10);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    .answer-content.rich pre {
+      margin: 10px 0;
+      padding: 14px 16px;
+      overflow-x: auto;
+      background: rgba(0, 0, 0, .34);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-sm);
+      max-width: 100%;
+    }
+
+    .answer-content.rich pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-80);
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    .answer-content.rich table {
+      width: 100%;
+      margin: 10px 0;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      display: block;
+      overflow-x: auto;
+    }
+
+    .answer-content.rich th,
+    .answer-content.rich td {
+      border: 1px solid var(--hairline);
+      padding: 8px 12px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .answer-content.rich th {
+      color: var(--text);
+      font-weight: 500;
+      background: rgba(255, 255, 255, .05);
+    }
+
+    .answer-content.rich blockquote {
+      margin: 10px 0;
+      padding: 2px 0 2px 14px;
+      color: var(--text-60);
     }
 
     /* ============================================================
@@ -521,6 +682,96 @@
       font-size: 12.5px;
       color: var(--amber);
       word-break: break-all;
+    }
+
+    .field-hint {
+      margin-top: 7px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--text-60);
+    }
+
+    /* 开关：用原生 checkbox + 伪元素，不用 JS 切换 class */
+    .field-switch {
+      margin-top: 24px;
+    }
+
+    .switch {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      cursor: pointer;
+    }
+
+    .switch input {
+      position: absolute;
+      opacity: 0;
+      width: 44px;
+      height: 26px;
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .switch-track {
+      position: relative;
+      flex: none;
+      width: 44px;
+      height: 26px;
+      border-radius: var(--r-full);
+      background: rgba(255, 255, 255, .12);
+      border: 1px solid var(--hairline);
+      transition: background var(--slow) var(--ease), border-color var(--slow) var(--ease);
+    }
+
+    .switch-track::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--text-60);
+      transition: transform var(--slow) var(--ease), background var(--slow) var(--ease);
+    }
+
+    .switch input:checked + .switch-track {
+      background: var(--amber);
+      border-color: transparent;
+    }
+
+    .switch input:checked + .switch-track::after {
+      transform: translateX(18px);
+      background: var(--ink);
+    }
+
+    .switch input:focus-visible + .switch-track {
+      outline: 2px solid var(--amber);
+      outline-offset: 2px;
+    }
+
+    .switch-label {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .switch-label em {
+      display: block;
+      margin-top: 3px;
+      font-style: normal;
+      font-size: 12.5px;
+      color: var(--text-60);
+    }
+
+    .stats-line {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--hairline);
+      font-family: ui-monospace, "SF Mono", Consolas, monospace;
+      font-size: 11.5px;
+      line-height: 1.8;
+      color: var(--text-60);
     }
 
     /* ============================================================
@@ -749,6 +1000,17 @@
       </div>
 
       <div class="field">
+        <label for="regionPreset">截屏区域</label>
+        <select id="regionPreset" onchange="previewRegion()">
+          <option value="full">全屏</option>
+          <option value="left_half">左半屏（适合左文档 / 右 AI 布局）</option>
+          <option value="right_half">右半屏</option>
+          <option value="center">居中 1200×800</option>
+        </select>
+        <p class="field-hint" id="regionHint">只截目标区域能降低图片体积与识别噪音。</p>
+      </div>
+
+      <div class="field">
         <label for="captureInterval">截图间隔（秒）</label>
         <input type="number" id="captureInterval" min="2" max="300" step="1" inputmode="numeric">
       </div>
@@ -758,10 +1020,27 @@
         <textarea id="systemPrompt" placeholder="留空则使用内置提示词。需要固定输出格式时在此覆盖。"></textarea>
       </div>
 
+      <div class="field field-switch">
+        <label class="switch" for="jsonMode">
+          <input type="checkbox" id="jsonMode">
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-label">
+            强制 JSON 输出
+            <em>结果可被程序直接消费；部分服务不支持，遇到 400 请关闭</em>
+          </span>
+        </label>
+      </div>
+
       <div class="btn-row settings-actions">
         <button class="btn btn-accent" onclick="saveSettings()">保存设置</button>
         <button class="btn" onclick="testConnection()">测试连接</button>
       </div>
+
+      <div class="btn-row settings-actions">
+        <button class="btn btn-ghost" onclick="clearHistory()">清空记录与截图</button>
+      </div>
+
+      <div class="stats-line" id="statsLine">—</div>
 
     </section>
 
@@ -893,6 +1172,126 @@
       }
     }
 
+    // ==================== 轻量 markdown 渲染 ====================
+    // 视觉模型常输出标题、列表、表格、代码块。纯文本展示会很乱，
+    // 而引入 marked.js 之类需要 CDN 或构建步骤 —— 这里手写一个够用的渲染器，
+    // 保持"单文件、零依赖、可离线"的特性。
+    //
+    // 安全前提：所有用户可见内容先escapeHtml，再做结构化替换，
+    // 因此模型输出里的 HTML 不会被执行。
+    const PH_BLOCK = String.fromCharCode(1);
+    const PH_CODE = String.fromCharCode(2);
+    const PH_BLOCK_RE = new RegExp(PH_BLOCK + '(\\d+)' + PH_BLOCK, 'g');
+    const PH_CODE_RE = new RegExp(PH_CODE + '(\\d+)' + PH_CODE, 'g');
+
+    function renderMarkdown(text) {
+      if (!text) return '';
+
+      // 代码块先抽出，避免其中的 * _ # 被误当markdown 语法
+      const blocks = [];
+      let html = escapeHtml(text).replace(/```([\s\S]*?)```/g, (m, code) => {
+        blocks.push(code.replace(/^\n/, ''));
+        return PH_BLOCK + blocks.length + PH_BLOCK;
+      });
+
+      // 行内代码
+      const codes = [];
+      html = html.replace(/`([^`\n]+)`/g, (m, code) => {
+        codes.push(code);
+        return PH_CODE + codes.length + PH_CODE;
+      });
+
+      const lines = html.split('\n');
+      const out = [];
+      let listType = null;   // 'ul' | 'ol' | null
+      let inTable = false;
+
+      const closeList = () => {
+        if (listType) { out.push(`</${listType}>`); listType = null; }
+      };
+      const closeTable = () => {
+        if (inTable) { out.push('</tbody></table>'); inTable = false; }
+      };
+      const closeAll = () => { closeList(); closeTable(); };
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // 表格：| a | b | 形式，且下一行是分隔行
+        if (/^\s*\|.*\|\s*$/.test(line) &&
+            /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || '')) {
+          closeAll();
+          const head = line.split('|').slice(1, -1).map(c => c.trim());
+          out.push('<table><thead><tr>' +
+            head.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>');
+          inTable = true;
+          i++;                                  // 跳过分隔行
+          continue;
+        }
+        if (inTable) {
+          const cells = line.split('|').slice(1, -1).map(c => c.trim());
+          out.push('<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>');
+          continue;
+        }
+
+        // 标题
+        const heading = line.match(/^(#{1,3})\s+(.*)$/);
+        if (heading) {
+          closeAll();
+          const level = heading[1].length;
+          out.push(`<h${level}>${heading[2]}</h${level}>`);
+          continue;
+        }
+
+        // 列表
+        const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+        const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+        if (ul || ol) {
+          closeTable();
+          const want = ul ? 'ul' : 'ol';
+          if (listType !== want) {
+            closeList();
+            out.push(`<${want}>`);
+            listType = want;
+          }
+          out.push(`<li>${(ul || ol)[1]}</li>`);
+          continue;
+        }
+
+        // 引用
+        const quote = line.match(/^&gt;\s?(.*)$/);
+        if (quote) {
+          closeAll();
+          out.push(`<blockquote>${quote[1]}</blockquote>`);
+          continue;
+        }
+
+        // 空行
+        if (!line.trim()) { closeAll(); continue; }
+
+        closeAll();
+        out.push(`<p>${inlineFormat(line)}</p>`);
+      }
+
+      closeAll();
+      html = out.join('');
+
+      // 还原代码块与行内代码
+      html = html.replace(PH_BLOCK_RE,
+        (m, i) => `<pre><code>${blocks[Number(i)]}</code></pre>`);
+      html = html.replace(PH_CODE_RE,
+        (m, i) => `<code>${codes[Number(i)]}</code>`);
+
+      return html;
+    }
+
+    // 行内强调：**粗体** 与 *斜体*。同样在 escapeHtml 之后执行
+    function inlineFormat(text) {
+      return text
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+    }
+
     // ==================== UI 更新 ====================
     function updateStatus(state, text) {
       const dot = document.getElementById('wsDot');
@@ -932,15 +1331,62 @@
         </div>`;
       }
 
-      return `<div class="answer-content">${escapeHtml(text)}</div>`;
+      // 纯文本或失败信息保持 pre-wrap；模型输出走 markdown 渲染
+      if (record && record.ok === false) {
+        return `<div class="answer-content">${escapeHtml(text)}</div>`;
+      }
+      return `<div class="answer-content rich">${renderMarkdown(text)}</div>`;
+    }
+
+    // 元信息：耗时、图片体积、分辨率 —— 用于成本归因
+    function buildMetaRow(record) {
+      if (!record) return '';
+      const parts = [];
+
+      if (record.elapsed) {
+        parts.push(`<span>耗时 ${Number(record.elapsed).toFixed(2)}s</span>`);
+      }
+      if (record.size_kb) {
+        const dim = (record.width && record.height)
+          ? ` (${record.width}×${record.height})` : '';
+        parts.push(`<span>图片 ${record.size_kb}KB${dim}</span>`);
+      }
+      if (record.created_at && record.created_at.length >= 10) {
+        parts.push(`<span>${escapeHtml(record.created_at.slice(0, 10))}</span>`);
+      }
+      return parts.length ? `<div class="meta-row">${parts.join('')}</div>` : '';
+    }
+
+    // 缩略图：点击放大到原图，方便核对「模型当时看到的是什么」
+    function buildThumb(record) {
+      if (!record || !record.screenshot) return '';
+      const src = '/api/screenshot/' + encodeURIComponent(record.screenshot);
+      return `<img class="shot-thumb" src="${src}" alt="本次识别所用的屏幕截图"
+                   loading="lazy" decoding="async"
+                   onclick="openShot(this.src)" onerror="this.style.display='none'">`;
+    }
+
+    function openShot(src) {
+      let box = document.getElementById('lightbox');
+      if (!box) {
+        box = document.createElement('dialog');
+        box.id = 'lightbox';
+        box.className = 'lightbox';
+        box.addEventListener('click', () => box.close());
+        document.body.appendChild(box);
+      }
+      box.innerHTML = '<img src="' + src + '" alt="屏幕截图原图">';
+      box.showModal();
     }
 
     // 统一构造一张结果卡片
     function buildAnswerCard(record) {
       const div = document.createElement('div');
-      div.className = 'answer-card';
+      const failed = record && record.ok === false;
+      div.className = 'answer-card' + (failed ? ' is-failed' : '');
 
       const time = (record && record.time) ? escapeHtml(record.time) : '--:--';
+      const failTag = failed ? '<span class="failed-tag">失败</span>' : '';
 
       let warningHtml = '';
       if (record && record.vision_warning) {
@@ -949,7 +1395,9 @@
       }
 
       div.innerHTML = `
-        <div class="answer-time">${time}</div>
+        <div class="answer-time">${time}${failTag}</div>
+        ${buildMetaRow(record)}
+        ${buildThumb(record)}
         ${warningHtml}
         ${buildAnswerBody(record)}
       `;
@@ -1074,15 +1522,49 @@
 
     async function clearHistory() {
       try {
-        await postJSON('/api/clear-history');
+        const data = await postJSON('/api/clear-history');
+        if (data.ok) {
+          document.getElementById('historyList').innerHTML =
+            '<div class="empty-state"><div class="icon">◦</div><div>暂无记录</div></div>';
+          updateHistoryCount();
+          const n = data.screenshots_removed || 0;
+          showToast(n > 0 ? `已清空记录与${n} 张截图` : '记录已清空');
+        }
       } catch (e) {
         showToast('❌ 清空失败: ' + e.message);
-        return;
       }
-      document.getElementById('historyList').innerHTML =
-        '<div class="empty-state"><div class="icon">◦</div><div>暂无记录</div></div>';
-      updateHistoryCount();
-      showToast('已清空');
+    }
+
+    // 区域预设：只改本地选中态，保存设置后才生效
+    function previewRegion() {
+      const preset = document.getElementById('regionPreset').value;
+      const hint = document.getElementById('regionHint');
+      const texts = {
+        full: '截取整个主显示器。',
+        left_half: '只截左半屏 —— 适合「左边文档 / 右边 AI」的并排布局。',
+        right_half: '只截右半屏。',
+        center: '只截居中 1200×800 区域，适合聚焦对话内容。'
+      };
+      hint.textContent = texts[preset] || '';
+    }
+
+    // 统计概览：总条数 / 成功率 / 平均耗时 / 截图占用
+    async function loadStats() {
+      try {
+        const resp = await fetch('/api/stats');
+        if (!resp.ok) return;
+        const d = await resp.json();
+        const s = d.storage || {};
+        const p = d.screenshots || {};
+
+        const successRate = s.total ? Math.round((s.ok / s.total) * 100) : 0;
+        document.getElementById('statsLine').textContent =
+          `记录 ${s.total || 0} 条· 成功率 ${successRate}% · 平均耗时 ${s.avg_elapsed || 0}s\n` +
+          `截图 ${p.kept || 0} 张 · 占用 ${p.used_mb || 0} MB`;
+      } catch (e) {
+        // 统计是锦上添花，失败不应打扰用户
+        console.warn('加载统计失败', e);
+      }
     }
 
     // ==================== 设置 ====================
@@ -1115,6 +1597,9 @@
         document.getElementById('model').value = cfg.llm.model || '';
         document.getElementById('systemPrompt').value = cfg.llm.system_prompt || '';
         document.getElementById('captureInterval').value = cfg.capture?.interval || 10;
+        document.getElementById('regionPreset').value = cfg.capture?.region_preset || 'full';
+        document.getElementById('jsonMode').checked = !!cfg.llm.json_mode;
+        previewRegion();
 
         // 服务端出于安全考虑只回传掩码（如 abcd...wxyz），不返回明文密钥。
         // 因此这里不回填到输入框，避免用户误把掩码当成真实 Key 保存回去。
@@ -1148,7 +1633,8 @@
       const newLlm = {
         api_base: document.getElementById('apiBase').value.trim(),
         model: document.getElementById('model').value.trim(),
-        system_prompt: document.getElementById('systemPrompt').value.trim()
+        system_prompt: document.getElementById('systemPrompt').value.trim(),
+        json_mode: document.getElementById('jsonMode').checked
       };
       if (keyInput) {
         newLlm.api_key = keyInput;
@@ -1157,7 +1643,8 @@
       const newConfig = {
         llm: newLlm,
         capture: {
-          interval: parseInt(document.getElementById('captureInterval').value) || 10
+          interval: parseInt(document.getElementById('captureInterval').value) || 10,
+          region_preset: document.getElementById('regionPreset').value
         }
       };
 
@@ -1170,6 +1657,7 @@
         const data = await resp.json();
         if (data.ok) {
           showToast('✅ 设置已保存');
+          loadStats();
         } else {
           showToast('❌ 保存失败');
         }
@@ -1302,6 +1790,7 @@
     async function init() {
       await loadSettings();
       connectWS();
+      loadStats();
 
       // 获取接入地址
       try {

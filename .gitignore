@@ -41,3 +41,6 @@ Thumbs.db
 *.tmp
 *.bak
 *~
+
+# SQLite 记录数据库（含用户数据，不应提交）
+*.db

@@ -2,15 +2,20 @@
 
 职责划分
 --------
-* ``capture.py`` 负责"怎么截屏"（含内容变更检测）
-* ``llm_client.py``   负责"怎么调模型"（OpenAI 兼容 + MiniMax VLM 端点）
-* 本模块            负责"编排与对外暴露"：REST 触发、WebSocket 广播、配置热更新
+* ``capture.py``负责"怎么截屏"（含内容变更检测、区域预设、保留策略）
+* ``llm_client.py``   负责"怎么调模型"（OpenAI 兼容 + MiniMax VLM端点）
+* ``store.py``       负责"记录怎么存"（SQLite 持久化 + 冷启动回填）
+* 本模块            只做编排与对外暴露：REST 触发、WebSocket 广播、配置热更新
+
+分层的好处：``app.py`` 里没有任何 SQL 与文件删除细节，换存储后端时
+编排逻辑不受影响。
 
 安全性说明
 ----------
 服务默认监听 0.0.0.0（需要手机访问），且**不内置认证**。因此：
 * 所有对外接口一律只返回 ``config.to_public_dict()``（密钥已掩码）
 * 任何需要写入密钥的接口，都通过掩码识别来避免"回显覆盖"事故
+* 截图通过 ``/api/screenshot/{name}`` 暴露，已做路径穿越校验
 * 若要暴露到公网，请自行在前面加反向代理并启用 TLS + 访问控制
 """
 
@@ -31,12 +36,13 @@ from typing import Any, AsyncIterator, Deque, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse
 
-from capture import Capture
+from capture import REGION_PRESETS, Capture, RetentionPolicy
 from config import Config, get_base_dir
 from llm_client import LLMClient
+from store import RecordStore
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,36 +53,17 @@ logger = logging.getLogger(__name__)
 config = Config()
 
 
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """FastAPI 生命周期钩子（替代已弃用的 on_event）。"""
-    init_modules()
-    _sync_history_limit()
-    logger.info(
-        f"服务已启动，手机浏览器访问: http://{get_local_ip()}:{current_port()}"
-    )
-    yield
-    # 释放底层句柄，避免进程退出时 mss 的截图资源泄漏
-    if capture is not None:
-        capture.close()
-
-
-app = FastAPI(
-    title="ScreenPipe",
-    description="屏幕内容实时结构化框架：捕获 → 变更检测 → 视觉模型理解 → 实时推送",
-    version="1.1.0",
-    lifespan=lifespan,
-)
-
 # ---------------------------------------------------------------------------
 # 运行时状态
 #
-# 这些可变对象是进程级单例（单文件部署、无多进程需求）。使用 deque 而非 list
+# 这些可变对象是进程级单例（单文件部署、无多进程需求）。使用 deque 而非list
 # 是为了给历史记录一个真正的上界——早期版本只在*读取* 时切片，内存里其实
 # 一直在增长。
 # ---------------------------------------------------------------------------
 capture: Optional[Capture] = None
 llm_client: Optional[LLMClient] = None
+store: Optional[RecordStore] = None
+retention: Optional[RetentionPolicy] = None
 capture_running = False
 capture_task: Optional[asyncio.Task] = None
 connected_websockets: set = set()
@@ -84,6 +71,29 @@ connected_websockets: set = set()
 _history: Deque[Dict[str, Any]] = deque(maxlen=200)
 # 实际监听端口：由 run_server 在启动前写入，可能因端口避让而不同于配置值
 actual_port: Optional[int] = None
+
+VISION_ISSUE_PATTERNS = [
+    "没有收到截图", "没有收到图片", "未看到图片", "看不到图片",
+    "无法识别图片", "没有图片", "没有提供图片", "没有截图",
+    "无法看到", "无图像", "未提供图像", "未检测到图片",
+    "no image", "don't see an image", "cannot see the image",
+    "did not receive an image", "no screenshot", "unable to see",
+]
+
+
+# ---------------------------------------------------------------------------
+# 配置派生
+# ---------------------------------------------------------------------------
+
+def _screenshot_dir() -> Path:
+    """截图目录：配置优先，未配置则用项目下的 screenshots/。"""
+    raw = config.capture_config.get("save_dir")
+    return Path(raw) if raw else get_base_dir() / "screenshots"
+
+
+def _db_path() -> Path:
+    """记录数据库路径。"""
+    return Path(config.get("storage", "db_path") or get_base_dir() / "records.db")
 
 
 def _history_limit() -> int:
@@ -119,17 +129,60 @@ def history_snapshot() -> List[Dict[str, Any]]:
     return [dict(record) for record in _history]
 
 
+def init_store() -> None:
+    """打开数据库并把历史记录回填到内存。
+
+    冷启动回填让"重启后仍能翻看之前的记录"成立，这是持久化的核心价值。
+    """
+    global store
+
+    store = RecordStore(str(_db_path()))
+    records = store.recent(limit=_history_limit())
+    _history.clear()
+    _history.extend(records)
+    if records:
+        logger.info(f"已从数据库回填{len(records)} 条历史记录")
+    _sync_history_limit()
+
+
+def _apply_retention() -> Dict[str, Any]:
+    """执行截图清理，返回清理统计。"""
+    if retention is None:
+        return {"removed": 0, "freed_mb": 0, "kept": 0, "used_mb": 0.0}
+    removed, freed = retention.purge()
+    if removed:
+        logger.info(f"截图清理：删除{removed} 张，释放 {freed / 1024 / 1024:.1f} MB")
+    return {
+        "removed": removed,
+        "freed_mb": round(freed / 1024 / 1024, 2),
+        "kept": len(retention.list_files()),
+        "used_mb": round(retention.used_bytes() / 1024 / 1024, 2),
+    }
+
+
 def init_modules() -> None:
     """按当前配置重建捕获器与模型客户端（配置热更新后需重新调用）。"""
-    global capture, llm_client
+    global capture, llm_client, retention
+
+    shot_dir = _screenshot_dir()
+    shot_dir.mkdir(parents=True, exist_ok=True)
 
     cap_cfg = config.capture_config
-    save_dir = cap_cfg.get("save_dir") or str(get_base_dir() / "screenshots")
-    os.makedirs(save_dir, exist_ok=True)
     capture = Capture(
-        save_dir=save_dir,
+        save_dir=str(shot_dir),
         quality=int(cap_cfg.get("quality", 60)),
         region=cap_cfg.get("region"),
+    )
+
+    # 区域预设优先于手动坐标：预设由程序按当前分辨率算，避免用户手填
+    preset = cap_cfg.get("region_preset")
+    if preset:
+        capture.set_region_preset(preset)
+
+    retention = RetentionPolicy(
+        directory=str(shot_dir),
+        max_days=int(config.get("retention", "max_days", default=7)),
+        max_files=int(config.get("retention", "max_files", default=500)),
     )
 
     llm_cfg = config.llm_config
@@ -138,6 +191,7 @@ def init_modules() -> None:
         api_key=llm_cfg.get("api_key", ""),
         model=llm_cfg.get("model", ""),
         system_prompt=llm_cfg.get("system_prompt"),
+        json_mode=bool(llm_cfg.get("json_mode", False)),
     )
     logger.info(f"模块已初始化，模型={llm_cfg.get('model')}")
 
@@ -157,7 +211,7 @@ def get_local_ip() -> str:
 def find_available_port(preferred: int, host: str = "0.0.0.0", attempts: int = 20) -> int:
     """返回可用端口：优先 preferred，被占用则依次向后探测。
 
-    开发时8000/8080 常被其他服务占用，直接启动失败体验很差，
+    开发时 8000/8080 常被其他服务占用，直接启动失败体验很差，
     因此这里做自动避让。
     """
     for offset in range(attempts):
@@ -195,28 +249,70 @@ def _check_vision_issue(content: str) -> str:
     for pattern in VISION_ISSUE_PATTERNS:
         if pattern.lower() in lowered:
             return (
-                "⚠️ 模型可能未识别到截图。"
+                "模型可能未识别到截图。"
                 "请确认 llm.model 填写的是支持图片输入的视觉（多模态）模型——"
                 "纯文本模型无法处理图片。可参考 README 选择模型。"
             )
     return ""
 
 
-VISION_ISSUE_PATTERNS = [
-    "没有收到截图", "没有收到图片", "未看到图片", "看不到图片",
-    "无法识别图片", "没有图片", "没有提供图片", "没有截图",
-    "无法看到", "无图像", "未提供图像", "未检测到图片",
-    "no image", "don't see an image", "cannot see the image",
-    "did not receive an image", "no screenshot", "unable to see",
-]
+def _make_record(
+    shot,
+    content: str,
+    *,
+    ok: bool,
+    elapsed: float,
+    vision_warning: str = "",
+    error: str = "",
+) -> Dict[str, Any]:
+    """组装一条记录。
+
+    ``screenshot`` 字段是P0 的关键：它把内存里的这条记录与磁盘上那张
+    JPG 绑定在一起，因此可以在界面上展示缩略图，也能在删除记录时
+    同步删掉图片——此前两者是完全脱钩的。
+    """
+    now = datetime.now()
+    return {
+        "created_at": now.isoformat(timespec="seconds"),
+        "time": now.strftime("%H:%M:%S"),
+        "ok": ok,
+        "content": content,
+        "vision_warning": vision_warning,
+        "screenshot": getattr(shot, "filename", "") or "",
+        "width": getattr(shot, "width", 0),
+        "height": getattr(shot, "height", 0),
+        "size_kb": getattr(shot, "size_kb", 0),
+        "elapsed": round(elapsed, 2),
+        "tokens": 0,
+        "error": error,
+    }
+
+
+def _persist(record: Dict[str, Any]) -> None:
+    """写入内存 + 数据库，并按保留策略裁剪。
+
+    失败也要落库：Key 过期、额度耗尽这类问题只弹一次 toast 就消失，
+    留痕后才能在历史里回看"昨天失败的都是 401"。
+    """
+    _history.append(record)
+    _sync_history_limit()
+
+    if store is not None:
+        try:
+            store.insert(record)
+            store.trim(keep=_history_limit())
+        except Exception as exc:  # 落盘失败不应影响主流程
+            logger.error(f"记录落库失败: {exc}")
+
+    _apply_retention()
 
 
 async def do_capture(force: bool = False) -> Dict[str, Any]:
     """执行一次「截屏 → 视觉模型理解」，返回统一结构的结果。
 
     :param force: True 时忽略"内容未变化"判定，强制截屏并请求模型
-                  （手动触发的语义；自动循环则传 False 以省Token）
-    :return: {ok, skipped, answer, vision_warning, elapsed}
+                  （手动触发的语义；自动循环则传 False 以省 Token）
+    :return: {ok, skipped, answer, record, elapsed, size_kb}
     """
     if capture is None or llm_client is None:
         init_modules()
@@ -224,36 +320,36 @@ async def do_capture(force: bool = False) -> Dict[str, Any]:
     started = time.perf_counter()
 
     if force and capture is not None:
-        # 手动触发时重置变更检测，否则用户看到的题没变、却什么都拿不到
+        # 手动触发时重置变更检测，否则用户看到的画面没变、却什么都拿不到
         capture.reset_hash()
 
-    img_b64 = capture.screenshot_base64(save_to_disk=True)
-    if not img_b64:
+    shot = capture.grab(save_to_disk=True)
+    if shot.is_empty:
         return {
             "ok": True,
             "skipped": True,
             "reason": "屏幕内容与上次一致，已跳过（节省一次模型调用）",
         }
 
-    size_kb = len(img_b64) * 3 // 4 // 1024
-    logger.info(f"截图已捕获，约 {size_kb}KB，开始请求模型")
+    size_kb = shot.size_kb
+    logger.info(f"截图已捕获 {shot.width}x{shot.height}，约 {size_kb}KB，开始请求模型")
 
     try:
-        answer = await llm_client.chat_with_image(img_b64)
-        vision_warning = _check_vision_issue(answer)
+        answer = await llm_client.chat_with_image(shot.base64)
     except Exception as exc:
+        elapsed = round(time.perf_counter() - started, 2)
         logger.error(f"模型调用失败: {exc}")
-        return {"ok": False, "error": str(exc)}
-
-    record = {
-        "time": datetime.now().strftime("%H:%M:%S"),
-        "content": answer,
-        "vision_warning": vision_warning,
-    }
-    _history.append(record)
-    _sync_history_limit()
+        record = _make_record(
+            shot, str(exc), ok=False, elapsed=elapsed, error=type(exc).__name__
+        )
+        _persist(record)
+        return {"ok": False, "error": str(exc), "record": record, "elapsed": elapsed}
 
     elapsed = round(time.perf_counter() - started, 2)
+    vision_warning = _check_vision_issue(answer)
+    record = _make_record(shot, answer, ok=True, elapsed=elapsed, vision_warning=vision_warning)
+    _persist(record)
+
     return {
         "ok": True,
         "skipped": False,
@@ -261,6 +357,7 @@ async def do_capture(force: bool = False) -> Dict[str, Any]:
         "vision_warning": vision_warning,
         "record": record,
         "elapsed": elapsed,
+        "size_kb": size_kb,
     }
 
 
@@ -279,6 +376,31 @@ async def broadcast(message: Dict[str, Any]) -> None:
 # 生命周期与页面
 # ---------------------------------------------------------------------------
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """FastAPI 生命周期钩子（替代已弃用的 on_event）。"""
+    init_modules()
+    init_store()
+    _apply_retention()
+    logger.info(
+        f"服务已启动，手机浏览器访问: http://{get_local_ip()}:{current_port()}"
+    )
+    yield
+    # 释放底层句柄，避免进程退出时 mss 与 sqlite 资源泄漏
+    if capture is not None:
+        capture.close()
+    if store is not None:
+        store.close()
+
+
+app = FastAPI(
+    title="ScreenPipe",
+    description="屏幕内容实时结构化框架：捕获 → 变更检测 → 视觉模型理解 → 实时推送",
+    version="2.0.0",
+    lifespan=lifespan,
+)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> str:
     template = Path(__file__).parent / "templates" / "index.html"
@@ -293,6 +415,7 @@ async def index() -> str:
 
 @app.get("/api/status")
 async def get_status() -> Dict[str, Any]:
+    shots = _apply_retention()
     return {
         "capture_running": capture_running,
         "config": config.to_public_dict(),
@@ -301,6 +424,9 @@ async def get_status() -> Dict[str, Any]:
         "history_count": len(_history),
         "history_limit": _history.maxlen,
         "ws_connections": len(connected_websockets),
+        "storage": store.stats() if store else {},
+        "screenshots": shots,
+        "region": (capture.region if capture else None),
     }
 
 
@@ -312,10 +438,26 @@ async def get_config() -> Dict[str, Any]:
 
 @app.post("/api/config")
 async def update_config(data: Dict[str, Any]) -> Dict[str, Any]:
+    global llm_client
+
     config.update_from_dict(data)
     config.save()
     _sync_history_limit()
-    init_modules()
+
+    # 截图目录、区域或保留策略变了要立即生效（init_modules 全部重建）
+    if data.get("capture"):
+        init_modules()
+        _apply_retention()
+    elif data.get("llm"):
+        llm_section = config.llm_config
+        llm_client = LLMClient(
+            api_base=llm_section.get("api_base", ""),
+            api_key=llm_section.get("api_key", ""),
+            model=llm_section.get("model", ""),
+            system_prompt=llm_section.get("system_prompt"),
+            json_mode=bool(llm_section.get("json_mode", False)),
+        )
+
     return {"ok": True, "message": "配置已保存并生效"}
 
 
@@ -369,17 +511,74 @@ async def get_history() -> List[Dict[str, Any]]:
     return history_snapshot()
 
 
+@app.get("/api/stats")
+async def get_stats() -> Dict[str, Any]:
+    """成本与健康度概览：总条数、成功率、平均耗时、图片总量。"""
+    shots = _apply_retention()
+    return {
+        "storage": store.stats() if store else {},
+        "screenshots": shots,
+        "db_path": str(_db_path()),
+    }
+
+
 @app.post("/api/clear-history")
 async def clear_history() -> Dict[str, Any]:
+    """清空记录。默认连同截图一起删——否则磁盘上会留下孤儿文件。"""
+    removed_shots = 0
+    if retention is not None:
+        for path in retention.list_files():
+            try:
+                path.unlink()
+                removed_shots += 1
+            except OSError:
+                continue
+
+    if store is not None:
+        store.delete_all()
+
     _history.clear()
-    return {"ok": True}
+    return {"ok": True, "screenshots_removed": removed_shots}
+
+
+@app.get("/api/ip")
+async def get_ip() -> Dict[str, Any]:
+    """返回手机端可访问的局域网地址。
+
+    页面的报头要显示「用这个地址在手机上打开」，而手机不能用
+    127.0.0.1 访问电脑 —— 必须给出实际的局域网 IP。
+    """
+    return {"ip": get_local_ip(), "port": current_port()}
+
+
+@app.get("/api/screenshot/{filename}")
+async def get_screenshot(filename: str) -> FileResponse:
+    """返回截图文件。
+
+    做路径穿越校验：只接受纯文件名，任何含分隔符或``..`` 的输入直接拒绝。
+    服务无认证且监听 0.0.0.0，这里是唯一能读到磁盘的入口，必须守住。
+    """
+    if not filename.endswith(".jpg") or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
+    path = _screenshot_dir() / filename
+    # 双重保险：解析后必须仍在截图目录内
+    try:
+        path.resolve().relative_to(_screenshot_dir().resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="非法路径")
+
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="截图不存在")
+
+    return FileResponse(path, media_type="image/jpeg")
 
 
 @app.post("/api/capture-once")
 async def capture_once() -> Dict[str, Any]:
     """手动触发一次识别（忽略内容变更检测）。"""
     result = await do_capture(force=True)
-    if result.get("ok") and not result.get("skipped"):
+    if result.get("record"):
         await broadcast({"type": "answer", "data": result["record"]})
     return result
 
@@ -409,16 +608,6 @@ async def stop_capture() -> Dict[str, Any]:
     return {"ok": True, "message": "自动截屏已停止"}
 
 
-@app.get("/api/ip")
-async def get_ip() -> Dict[str, Any]:
-    """返回手机端可访问的局域网地址。
-
-    页面的报头要显示「用这个地址在手机上打开」，而手机不能用
-    127.0.0.1 访问电脑 —— 必须给出实际的局域网 IP。
-    """
-    return {"ip": get_local_ip(), "port": current_port()}
-
-
 # ---------------------------------------------------------------------------
 # WebSocket
 # ---------------------------------------------------------------------------
@@ -443,7 +632,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             if action == "capture_once":
                 result = await do_capture(force=True)
                 # 广播给所有端（多手机同时看），而不只是发起方
-                if result.get("ok") and not result.get("skipped"):
+                if result.get("record"):
                     await broadcast({"type": "answer", "data": result["record"]})
                 else:
                     await ws.send_json({"type": "capture_result", "data": result})
@@ -455,7 +644,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 await ws.send_json({"type": "status", "data": await get_status()})
 
             elif action == "clear_history":
-                _history.clear()
+                await clear_history()
                 await ws.send_json({"type": "status", "data": {"message": "历史已清空"}})
 
             else:

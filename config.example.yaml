@@ -16,16 +16,36 @@ capture:
   quality: 60
 
   # 截图落盘目录。留空则使用项目下的 screenshots/。
-  # 用于留存原始画面便于回溯。
   save_dir: ""
 
-  # 只截取指定区域，可显著降低图片体积与识别噪音。
-  # 格式：[left, top, width, height]，注释掉则截取主显示器全屏。
+  # 区域预设：full / left_half / right_half / center
+  # 只截目标区域能显著降低图片体积与识别噪音。
+  #   left_half  适合「左文档 / 右 AI」的并排布局
+  #   center     只截中间 1200x800
+  # 预设由程序按当前显示器分辨率实时计算，无需手填坐标。
+  region_preset: full
+
+  # 需要精确控制时，用region 覆盖上面的预设。
+  # 格式：[left, top, width, height]；注释掉则截取主显示器全屏。
   # region: [0, 0, 1920, 1080]
 
 history:
-  # 内存中保留的解析记录条数，超出后自动淘汰最旧的。
+  # 保留的解析记录条数（内存与数据库同此上限，超出后淘汰最旧的）。
   max_records: 200
+
+retention:
+  # 截图保留策略：两个阈值任一超出即清理最旧的文件。
+  #   max_days   按时间，删掉超过这个天数的老截图
+  #   max_files  按数量，保证高频运行时磁盘不会失控
+  # 两者并存的理由：只按天数则单日文件数可能仍很大；
+  # 只按数量则低频运行时磁盘占用会持续数月不回。
+  max_days: 7
+  max_files: 500
+
+storage:
+  # 解析记录的 SQLite 数据库路径。留空则使用项目下的 records.db。
+  # 标准库自带，无需额外安装；文件已被 .gitignore 忽略。
+  db_path: ""
 
 llm:
   # 任意 OpenAI 兼容地址。程序会在其后拼接 /chat/completions。
@@ -41,8 +61,13 @@ llm:
   model: deepseek-flash
 
   # 留空则使用 llm_client.py 中的内置提示词。
-  # 想要固定输出格式（比如纯 JSON）时在这里覆盖它。
+  # 想要固定输出格式时在这里覆盖它。
   system_prompt: ""
+
+  # 开启后强制模型返回 JSON，结果可被程序直接消费而不只是给人阅读。
+  # 提示词需与之一致（要求模型输出 JSON 结构）。
+  # 注意：并非所有服务都支持 response_format，遇到 400 时把它关掉即可。
+  json_mode: false
 
 server:
   # 监听地址。手机要访问就必须保持 0.0.0.0。

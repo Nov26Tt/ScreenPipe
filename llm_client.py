@@ -53,18 +53,23 @@ class LLMClient:
         api_key: str,
         model: str,
         system_prompt: Optional[str] = None,
+        json_mode: bool = False,
     ):
         """
-        :param api_base: OpenAI 兼容根地址，如 ``https://open.bigmodel.cn/api/paas/v4``
+        :param api_base: OpenAI 兼容根地址，如 ``https://api.deepseek.com/v1``
                          程序会在其后拼接 ``/chat/completions``
         :param api_key:密钥
         :param model:   模型名，**必须是支持图片输入的视觉模型**
         :param system_prompt: 留空则使用内置的结构化输出提示
+        :param json_mode:是否强制模型返回 JSON（对应 API 的 ``response_format``）。
+                          开启后结果可被程序直接消费，而不只是给人阅读；
+                          但并非所有服务都支持该参数，故做成可关闭。
         """
         self.api_base = (api_base or "").rstrip("/")
         self.api_key = api_key or ""
         self.model = model or ""
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self.json_mode = bool(json_mode)
         self._is_minimax = any(h in self.api_base.lower() for h in self.MINIMAX_HOSTS)
 
     # ------------------------------------------------------------------
@@ -150,6 +155,16 @@ class LLMClient:
         if self._is_minimax:
             return await self._call_minimax(image_base64, user_prompt)
 
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": self._build_messages(image_base64, user_prompt),
+            "temperature": 0.2,   #截图理解需要稳定而非发散
+            "max_tokens": 4096,
+        }
+        if self.json_mode:
+            # 不少服务支持该参数；不支持时会返回 400，由调用方看到明确错误
+            payload["response_format"] = {"type": "json_object"}
+
         async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT) as client:
             response = await client.post(
                 f"{self.api_base}/chat/completions",
@@ -157,12 +172,7 @@ class LLMClient:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
                 },
-                json={
-                    "model": self.model,
-                    "messages": self._build_messages(image_base64, user_prompt),
-                    "temperature": 0.2,   # 截图理解需要稳定而非发散
-                    "max_tokens": 4096,
-                },
+                json=payload,
             )
 
         if response.status_code != 200:

@@ -91,11 +91,13 @@ class TestApiSurface:
         "/api/test-llm",
         "/api/test-llm-direct",
         "/api/history",
+        "/api/stats",
         "/api/clear-history",
         "/api/capture-once",
         "/api/start-capture",
         "/api/stop-capture",
         "/api/ip",
+        "/api/screenshot/{filename}",
         "/ws",
     }
 

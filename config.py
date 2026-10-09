@@ -26,22 +26,34 @@ DEFAULTS: Dict[str, Any] = {
         "api_base": "https://api.deepseek.com/v1",
         "api_key": "your-api-key-here",
         "model": "deepseek-flash",
-        "system_prompt": (
-            "你是一个屏幕内容理解助手。请识别截图中的内容并输出结构化结果。"
-        ),
+        "system_prompt": "",
+        # 开启后模型强制返回 JSON，结果可被程序直接消费。
+        # 并非所有服务都支持 response_format，遇到 400 时可关掉。
+        "json_mode": False,
     },
     "capture": {
-        "interval": 10,      # 自动截图间隔（秒）
-        "quality": 60,       # JPEG 压缩质量（1-95）
-        "save_dir": "",      # 留空则使用项目下的 screenshots/
-        "region": None,      # None 表示全屏；否则为 [left, top, width, height]
+        "interval": 10,          # 自动截图间隔（秒）
+        "quality": 60,           # JPEG 压缩质量（1-95）
+        "save_dir": "",          # 留空则使用项目下的 screenshots/
+        "region": None,          # None 表示全屏；否则为 [left, top, width, height]
+        "region_preset": "full", # full/left_half/right_half/center
     },
     "server": {
         "host": "0.0.0.0",
         "port": 8765,
     },
     "history": {
-        "max_records": 200,  # 内存中保留的记录条数（超出后自动淘汰最旧的）
+        "max_records": 200,      # 内存与数据库中保留的记录条数
+    },
+    "retention": {
+        # 截图保留策略：双阈值，任一超出即清理最旧的文件。
+        # 只按天数：高频运行时单日文件数依然可能很大
+        # 只按张数：低频运行时磁盘占用会持续数月不回
+        "max_days": 7,
+        "max_files": 500,
+    },
+    "storage": {
+        "db_path": "",           # 记录数据库路径，留空则用项目下的 records.db
     },
 }
 
