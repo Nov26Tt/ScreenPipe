@@ -47,3 +47,6 @@ Thumbs.db
 *.tmp
 *.bak
 *~
+
+# 编辑器/工具残留
+.switch
