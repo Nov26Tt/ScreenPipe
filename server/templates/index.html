@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>SnapStudy 学习助手</title>
+  <title>ScreenPipe · 屏幕内容实时结构化</title>
   <style>
     * {
       margin: 0;
@@ -451,7 +451,7 @@
 <body>
 
   <header>
-    <h1>🎯 SnapStudy 学习助手</h1>
+    <h1>📺 ScreenPipe</h1>
     <div class="status-bar">
       <span id="wsDot" class="dot red"></span>
       <span id="statusText">等待连接...</span>
@@ -492,31 +492,34 @@
       <div id="settingsAlert"></div>
 
       <div class="vision-warning">
-        <strong>⚠️ 重要：必须使用支持图片识别的多模态（Vision）模型！</strong><br>
-        纯文本模型（如 deepseek-chat 等未开启视觉的模型）无法识别截图。<br>
-        ✅ 推荐：gpt-5.6-terra、qwen3-vl-plus、doubao-seed-1.6-vision、glm-4.6v、deepseek-flash、kimi-k2.6、MiniMax Token Plan (VLM)。<br>
-        📌 模型名会随厂商快速迭代，下方预设仅作起点，请以各厂商官方文档为准。
+        <strong>⚠️ 必须使用支持图片输入的视觉（多模态）模型</strong><br>
+        纯文本模型无法处理截图，调用会失败或返回"未收到图片"。<br>
+        ✅ 免费可选：<code>glm-4.6v-flash</code>（智谱）、<code>qwen3-vl-flash</code>（阿里百炼限免）<br>
+        💰 付费可选：<code>glm-4.6v</code>、<code>qwen3-vl-plus</code>、<code>doubao-seed-2-0-lite</code>、<code>kimi-k2.6</code><br>
+        🔒 本地可选：<code>qwen3-vl:8b</code>（经 Ollama，截图不出本机）<br>
+        📌 模型名随厂商快速迭代，下方预设核实于 2026-10，失败时请以官方文档为准。
       </div>
 
       <div class="form-group">
-        <label>LLM 类型（快速选择）</label>
+        <label>服务商快速选择</label>
         <select id="llmPreset" onchange="applyPreset()">
           <option value="custom">自定义</option>
-          <option value="openai">OpenAI (GPT-5.6)</option>
-          <option value="qwen">通义千问 VL / 阿里百炼</option>
-          <option value="doubao">豆包 Vision / 火山方舟</option>
-          <option value="zhipu">智谱 GLM-V</option>
-          <option value="siliconflow">SiliconFlow (Qwen3-VL)</option>
-          <option value="deepseek">DeepSeek (deepseek-flash)</option>
+          <option value="zhipu_free">智谱 GLM-4.6V-Flash（免费）</option>
+          <option value="qwen_free">阿里百炼 Qwen3-VL-Flash（限免）</option>
+          <option value="ollama">Ollama 本地部署（图片不出本机）</option>
+          <option value="zhipu">智谱 GLM-4.6V</option>
+          <option value="qwen">阿里百炼 Qwen3-VL-Plus</option>
+          <option value="doubao">火山方舟 Doubao-Seed-2.0-Lite</option>
+          <option value="moonshot">Moonshot Kimi K2.6</option>
+          <option value="siliconflow">SiliconFlow</option>
           <option value="minimax">MiniMax Token Plan (VLM)</option>
-          <option value="moonshot">Moonshot / Kimi (kimi-k2.6)</option>
-          <option value="ollama">Ollama 本地 (Qwen3.5)</option>
+          <option value="openai">OpenAI</option>
         </select>
       </div>
 
       <div class="form-group">
         <label>API 地址</label>
-        <input type="text" id="apiBase" placeholder="https://api.deepseek.com/v1">
+        <input type="text" id="apiBase" placeholder="https://open.bigmodel.cn/api/paas/v4">
       </div>
 
       <div class="form-group">
@@ -526,17 +529,17 @@
 
       <div class="form-group">
         <label>模型名称</label>
-        <input type="text" id="model" placeholder="deepseek-chat">
+        <input type="text" id="model" placeholder="glm-4.6v-flash">
       </div>
 
       <div class="form-group">
         <label>截图间隔（秒）</label>
-        <input type="number" id="captureInterval" placeholder="5" min="2" max="60" value="5">
+        <input type="number" id="captureInterval" placeholder="10" min="2" max="300" value="10">
       </div>
 
       <div class="form-group">
         <label>系统提示词</label>
-        <textarea id="systemPrompt" placeholder="格式：题号. 题目概括 - 正确选项内容。不列全部选项，不解析。例：3. 企业文化特征 - 独特性、稳定性"></textarea>
+        <textarea id="systemPrompt" placeholder="留空则使用内置提示词。需要固定输出格式（如 JSON）时在此覆盖。"></textarea>
       </div>
 
       <div class="btn-row">
@@ -547,12 +550,12 @@
 
     <!-- 答案历史 -->
     <div class="card">
-      <div class="card-title">📋 答案记录 <span style="font-size:12px;color:var(--text2);font-weight:400"
+      <div class="card-title">📋 解析记录 <span style="font-size:12px;color:var(--text2);font-weight:400"
           id="historyCount">0条</span></div>
       <div class="history-list" id="historyList">
         <div class="empty-state">
           <div class="icon">📭</div>
-          <div>暂无记录，开始截图后答案将显示在这里</div>
+          <div>暂无记录，点击「手动截图」开始</div>
         </div>
       </div>
     </div>
@@ -710,7 +713,7 @@
       }
     }
 
-    // 统一构造「答案正文」：内容为空时给出明确提示，而不是留一片空白
+    // 统一构造「结果正文」：内容为空时给出明确提示，而不是留一片空白
     function buildAnswerBody(record) {
       const raw = record ? record.content : null;
       const text = (raw === null || raw === undefined) ? '' : String(raw);
@@ -728,7 +731,7 @@
       return `<div class="answer-content">${escapeHtml(text)}</div>`;
     }
 
-    // 统一构造一张答案卡片
+    // 统一构造一张结果卡片
     function buildAnswerCard(record) {
       const div = document.createElement('div');
       div.className = 'answer-card';
@@ -905,10 +908,21 @@
         }
 
         document.getElementById('apiBase').value = cfg.llm.api_base || '';
-        document.getElementById('apiKey').value = cfg.llm.api_key || '';
         document.getElementById('model').value = cfg.llm.model || '';
         document.getElementById('systemPrompt').value = cfg.llm.system_prompt || '';
-        document.getElementById('captureInterval').value = cfg.capture?.interval || 5;
+        document.getElementById('captureInterval').value = cfg.capture?.interval || 10;
+
+        // 服务端出于安全考虑只回传掩码（如 abcd...wxyz），不返回明文密钥。
+        // 因此这里不回填到输入框，避免用户误把掩码当成真实 Key 保存回去。
+        const keyField = document.getElementById('apiKey');
+        const masked = cfg.llm.api_key || '';
+        if (masked && masked !== 'your-api-key-here' && masked.includes('...')) {
+          keyField.value = '';
+          keyField.placeholder = '已配置（' + masked + '）· 如需更换请重新输入';
+        } else {
+          keyField.placeholder = 'sk-xxxxxxxx';
+          keyField.value = '';
+        }
 
         if (!cfg.llm.api_key || cfg.llm.api_key === 'your-api-key-here') {
           showSettingsAlert('⚠️ 还没有填写 API Key。请填写后点「保存设置」，否则截图无法识别。');
@@ -924,15 +938,22 @@
     }
 
     async function saveSettings() {
+      // 输入框留空表示"沿用已保存的密钥"——因为服务端不回显明文，
+      // 用户没有机会也不需要看到自己的Key。
+      const keyInput = document.getElementById('apiKey').value.trim();
+      const newLlm = {
+        api_base: document.getElementById('apiBase').value.trim(),
+        model: document.getElementById('model').value.trim(),
+        system_prompt: document.getElementById('systemPrompt').value.trim()
+      };
+      if (keyInput) {
+        newLlm.api_key = keyInput;
+      }
+
       const newConfig = {
-        llm: {
-          api_base: document.getElementById('apiBase').value.trim(),
-          api_key: document.getElementById('apiKey').value.trim(),
-          model: document.getElementById('model').value.trim(),
-          system_prompt: document.getElementById('systemPrompt').value.trim()
-        },
+        llm: newLlm,
         capture: {
-          interval: parseInt(document.getElementById('captureInterval').value) || 5
+          interval: parseInt(document.getElementById('captureInterval').value) || 10
         }
       };
 
@@ -955,20 +976,22 @@
 
     function applyPreset() {
       const preset = document.getElementById('llmPreset').value;
+      // 模型名均取自各厂商官方文档（核实于 2026-10）。
+      //厂商迭代很快，若调用返回 model not found，请以官方模型列表为准。
       const presets = {
-        openai: { base: 'https://api.openai.com/v1', model: 'gpt-5.6-terra' },
-        qwen: { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-plus' },
-        doubao: { base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-1.6-vision' },
-        zhipu: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v' },
-        siliconflow: { base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-VL-235B-A22B-Instruct' },
-        minimax: { base: 'https://api.minimax.chat/v1', model: 'MiniMax-M2.7' },
-        deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
-        moonshot: { base: 'https://api.moonshot.cn/v1', model: 'kimi-k2.6' },
-        ollama: { base: 'http://localhost:11434/v1', model: 'qwen3.5:9b' }
+        zhipu_free: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v-flash' },
+        zhipu:      { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v' },
+        qwen_free:  { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-flash' },
+        qwen:       { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-plus' },
+        doubao:     { base: 'https://ark.cn-beijing.volces.com/api/v3', model: 'doubao-seed-2-0-lite' },
+        moonshot:   { base: 'https://api.moonshot.cn/v1', model: 'kimi-k2.6' },
+        siliconflow:{ base: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-VL-8B-Instruct' },
+        ollama:     { base: 'http://localhost:11434/v1', model: 'qwen3-vl:8b' },
+        openai:     { base: 'https://api.openai.com/v1', model: 'gpt-4.1' },
+        minimax:    { base: 'https://api.minimax.chat/v1', model: '' }
       };
-      // 以上预设均已支持图片输入。模型名会随厂商快速迭代，
-      // 若调用失败请以各厂商官方文档的模型列表为准。
       // 注：MiniMax 走专用 VLM 端点，请求中不发送 model 字段。
+      // 注：Ollama 走本地部署时截图不出本机，适合对隐私敏感的场景。
 
       if (preset !== 'custom' && presets[preset]) {
         document.getElementById('apiBase').value = presets[preset].base;
@@ -978,9 +1001,26 @@
 
     async function testConnection() {
       showToast('正在测试连接...');
+      // 密钥留空时用已保存的密钥测试，避免用户每次都要重新输入
+      let keyInput = document.getElementById('apiKey').value.trim();
+      if (!keyInput) {
+        try {
+          const cfgResp = await fetch('/api/config');
+          const cfg = await cfgResp.json();
+          keyInput = cfg?.llm?.api_key || '';
+          if (keyInput.includes('...')) {
+            showToast('请在上方重新输入 API Key 后再测试');
+            return;
+          }
+        } catch (e) {
+          showToast('请先填写 API Key');
+          return;
+        }
+      }
+
       const llmConfig = {
         api_base: document.getElementById('apiBase').value.trim(),
-        api_key: document.getElementById('apiKey').value.trim(),
+        api_key: keyInput,
         model: document.getElementById('model').value.trim()
       };
 
