@@ -298,8 +298,21 @@
 
     .btn-ghost {
       background: transparent;
-      border-color: transparent;
+      border-color: var(--hairline);
       color: var(--text-60);
+    }
+
+    /* 破坏性操作：删除记录会连带删掉截图，必须有明确的视觉警示，
+       不能长得像次要链接。 */
+    .btn-danger {
+      background: rgba(210, 112, 92, .10);
+      border-color: rgba(210, 112, 92, .36);
+      color: var(--text);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(210, 112, 92, .18);
+      border-color: rgba(210, 112, 92, .55);
     }
 
     .btn-ghost:hover:not(:disabled) {
@@ -697,6 +710,10 @@
     }
 
     .switch {
+      /* 必须声明relative：内部 checkbox 是 position:absolute，
+         没有定位上下文它会脱离文档流飞到 body 末尾，
+         表现为「开关轨道消失、文字贴上来」。 */
+      position: relative;
       display: flex;
       align-items: flex-start;
       gap: 12px;
@@ -704,15 +721,24 @@
     }
 
     .switch input {
+      /* 用opacity 隐藏而非 display:none —— 后者会失去可点击性与可访问性。
+         inset:0 让它精确覆盖轨道，成为真正的点击热区。 */
       position: absolute;
-      opacity: 0;
+      inset: 0;
       width: 44px;
       height: 26px;
       margin: 0;
+      opacity: 0;
+      z-index: 1;
       cursor: pointer;
     }
 
     .switch-track {
+      /* 必须是 block：元素是 <span>，默认 display:inline，
+         而 width/height 对 inline 元素完全无效 —— 轨道会塌成0x0。
+         即使父级是 flex 容器，子项仍按自己的 display 参与布局，
+         所以这里必须显式声明。 */
+      display: block;
       position: relative;
       flex: none;
       width: 44px;
@@ -751,6 +777,8 @@
     }
 
     .switch-label {
+      flex: 1 1 auto;
+      min-width: 0;
       font-size: 14px;
       color: var(--text);
       line-height: 1.5;
@@ -1037,7 +1065,7 @@
       </div>
 
       <div class="btn-row settings-actions">
-        <button class="btn btn-ghost" onclick="clearHistory()">清空记录与截图</button>
+        <button class="btn btn-danger" onclick="clearHistory()">清空记录与截图</button>
       </div>
 
       <div class="stats-line" id="statsLine">—</div>
