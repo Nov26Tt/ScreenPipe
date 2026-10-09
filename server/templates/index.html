@@ -390,6 +390,23 @@
       white-space: nowrap;
     }
 
+    /* token 数字是这个页面最该被一眼看到的数据，用琥珀色标出 */
+    .meta-row b {
+      font-weight: 500;
+      color: var(--amber);
+    }
+
+    .meta-row em {
+      font-style: normal;
+      color: var(--text-60);
+    }
+
+    /* 缓存命中说明这次请求省了钱，值得单独标记 */
+    .token-saved {
+      color: var(--paper) !important;
+      opacity: .75;
+    }
+
     /* 缩略图：让「模型当时看到的是什么」可核对 */
     .shot-thumb {
       display: block;
@@ -1396,7 +1413,11 @@
       return `<div class="answer-content rich">${renderMarkdown(text)}</div>`;
     }
 
-    // 元信息：耗时、图片体积、分辨率 —— 用于成本归因
+    // 元信息：耗时、token、图片体积、日期 —— 用于成本归因
+    //
+    // token 拆成输入/输出两项展示：视觉模型的成本几乎全在输入侧
+    // （一张 1920x1080 截图约 1000+ tokens，输出可能只有几十个），
+    // 只给一个合计数会让人误以为"输出太长导致烧钱"。
     function buildMetaRow(record) {
       if (!record) return '';
       const parts = [];
@@ -1404,9 +1425,16 @@
       if (record.elapsed) {
         parts.push(`<span>耗时 ${Number(record.elapsed).toFixed(2)}s</span>`);
       }
+      if (record.prompt_tokens) {
+        const cached = record.cached_tokens
+          ? ` <em class="token-saved">缓存 ${record.cached_tokens}</em>` : '';
+        parts.push(
+          `<span>Token 输入 <b>${record.prompt_tokens}</b>${cached} / 输出 ${record.completion_tokens || 0}</span>`
+        );
+      }
       if (record.size_kb) {
         const dim = (record.width && record.height)
-          ? ` (${record.width}×${record.height})` : '';
+          ? ` <em>${record.width}×${record.height}</em>` : '';
         parts.push(`<span>图片 ${record.size_kb}KB${dim}</span>`);
       }
       if (record.created_at && record.created_at.length >= 10) {
@@ -1616,8 +1644,10 @@
         const p = d.screenshots || {};
 
         const successRate = s.total ? Math.round((s.ok / s.total) * 100) : 0;
+        const kTokens = ((s.total_tokens || 0) / 1000).toFixed(1);
         document.getElementById('statsLine').textContent =
-          `记录 ${s.total || 0} 条· 成功率 ${successRate}% · 平均耗时 ${s.avg_elapsed || 0}s\n` +
+          `记录 ${s.total || 0} 条 · 成功率 ${successRate}% · 平均耗时 ${s.avg_elapsed || 0}s\n` +
+          `Token 累计 ${kTokens}K（输入 ${s.prompt_tokens || 0} / 输出 ${s.completion_tokens || 0}）\n` +
           `截图 ${p.kept || 0} 张 · 占用 ${p.used_mb || 0} MB`;
       } catch (e) {
         // 统计是锦上添花，失败不应打扰用户

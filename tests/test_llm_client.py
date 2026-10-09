@@ -107,3 +107,115 @@ class TestEmptyScreenshot:
         client = LLMClient("https://x.com/v1", "k", "m")
         with pytest.raises(ValueError, match="截图为空"):
             await client.chat_with_image("")
+
+
+class TestUsageExtraction:
+    """token 用量解析。
+
+    视觉模型的成本几乎全在输入侧（一张全屏截图 1000+ tokens），
+    只记一个合计数会让人误判"是不是输出太长"。
+    """
+
+    def test_deepseek_shape(self):
+        payload = {"usage": {
+            "prompt_tokens": 1165, "completion_tokens": 100,
+            "total_tokens": 1265,
+            "prompt_cache_hit_tokens": 0,
+            "completion_tokens_details": {"reasoning_tokens": 100},
+        }}
+        u = LLMClient._extract_usage(payload)
+        assert u["prompt_tokens"] == 1165
+        assert u["completion_tokens"] == 100
+        assert u["total_tokens"] == 1265
+        assert u["reasoning_tokens"] == 100
+
+    def test_cached_tokens_from_both_locations(self):
+        """DeepSeek 用顶层字段，部分服务放在 prompt_tokens_details 里。"""
+        a = LLMClient._extract_usage(
+            {"usage": {"prompt_tokens": 100, "prompt_cache_hit_tokens": 80}}
+        )
+        b = LLMClient._extract_usage(
+            {"usage": {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 80}}}
+        )
+        assert a["cached_tokens"] == 80
+        assert b["cached_tokens"] == 80
+
+    def test_openai_style_field_names(self):
+        """兼容 input_tokens / output_tokens 这套命名。"""
+        u = LLMClient._extract_usage(
+            {"usage": {"input_tokens": 300, "output_tokens": 50}}
+        )
+        assert u["prompt_tokens"] == 300
+        assert u["completion_tokens"] == 50
+        # total 缺失时按两者相加
+        assert u["total_tokens"] == 350
+
+    def test_missing_usage_degrades_to_empty(self):
+        assert LLMClient._extract_usage({"choices": []}) == {}
+        assert LLMClient._extract_usage("not a dict") == {}
+
+    def test_partial_usage_does_not_crash(self):
+        u = LLMClient._extract_usage({"usage": {"prompt_tokens": 10}})
+        assert u["prompt_tokens"] == 10
+        assert u["completion_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_chat_with_image_returns_text_only(self):
+        """向后兼容：原方法仍只返回字符串。"""
+        assert callable(LLMClient.chat_with_image)
+
+
+class TestUsageExtraction:
+    """token 用量解析。
+
+    视觉模型的成本几乎全在输入侧（一张全屏截图 1000+ tokens），
+    只记一个合计数会让人误判"是不是输出太长"。
+    """
+
+    def test_deepseek_shape(self):
+        payload = {"usage": {
+            "prompt_tokens": 1165, "completion_tokens": 100,
+            "total_tokens": 1265,
+            "prompt_cache_hit_tokens": 0,
+            "completion_tokens_details": {"reasoning_tokens": 100},
+        }}
+        u = LLMClient._extract_usage(payload)
+        assert u["prompt_tokens"] == 1165
+        assert u["completion_tokens"] == 100
+        assert u["total_tokens"] == 1265
+        assert u["reasoning_tokens"] == 100
+
+    def test_cached_tokens_from_both_locations(self):
+        """DeepSeek 用顶层字段，部分服务放在 prompt_tokens_details 里。"""
+        a = LLMClient._extract_usage(
+            {"usage": {"prompt_tokens": 100, "prompt_cache_hit_tokens": 80}}
+        )
+        b = LLMClient._extract_usage(
+            {"usage": {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 80}}}
+        )
+        assert a["cached_tokens"] == 80
+        assert b["cached_tokens"] == 80
+
+    def test_openai_style_field_names(self):
+        """兼容 input_tokens / output_tokens 这套命名。"""
+        u = LLMClient._extract_usage(
+            {"usage": {"input_tokens": 300, "output_tokens": 50}}
+        )
+        assert u["prompt_tokens"] == 300
+        assert u["completion_tokens"] == 50
+        # total 缺失时按两者相加
+        assert u["total_tokens"] == 350
+
+    def test_missing_usage_degrades_to_empty(self):
+        assert LLMClient._extract_usage({"choices": []}) == {}
+        assert LLMClient._extract_usage("not a dict") == {}
+
+    def test_partial_usage_does_not_crash(self):
+        u = LLMClient._extract_usage({"usage": {"prompt_tokens": 10}})
+        assert u["prompt_tokens"] == 10
+        assert u["completion_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_chat_with_image_returns_text_only(self):
+        """向后兼容：原方法仍只返回字符串。"""
+        assert callable(LLMClient.chat_with_image)

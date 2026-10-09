@@ -28,10 +28,12 @@ CREATE TABLE IF NOT EXISTS records (
     screenshot     TEXT    NOT NULL DEFAULT '',-- 截图文件名（与磁盘文件对应）
     width          INTEGER NOT NULL DEFAULT 0,
     height         INTEGER NOT NULL DEFAULT 0,
-    size_kb        INTEGER NOT NULL DEFAULT 0,-- 图片体积，用于成本归因
-    elapsed        REAL    NOT NULL DEFAULT 0,-- 模型调用耗时（秒）
-    tokens         INTEGER NOT NULL DEFAULT 0,-- 可选：服务返回时填充
-    error          TEXT    NOT NULL DEFAULT '' -- 失败时的错误类型
+    size_kb        INTEGER NOT NULL DEFAULT 0, -- 图片体积，用于成本归因
+    elapsed        REAL    NOT NULL DEFAULT 0, -- 模型调用耗时（秒）
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0, -- 输入 token（视觉模型的大头）
+    completion_tokens INTEGER NOT NULL DEFAULT 0, -- 输出 token
+    cached_tokens     INTEGER NOT NULL DEFAULT 0, -- 命中缓存的输入 token
+    error          TEXT    NOT NULL DEFAULT ''    -- 失败时的错误类型
 );
 """
 
@@ -57,7 +59,35 @@ class RecordStore:
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.executescript(_INDEX)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """给旧库补齐后加的列。
+
+        ``CREATE TABLE IF NOT EXISTS`` 不会修改已存在的表 —— 老用户升级后
+        新列不会自动出现，直接读写会报 "no such column"。
+        SQLite 的 ``ALTER TABLE ... ADD COLUMN`` 是原子的且不锁表，
+        逐列检查、缺了才加即可，无需引入迁移框架。
+        """
+        existing = {row["name"] for row in self._conn.execute("PRAGMA table_info(records)")}
+
+        # (列名, 类型与默认值)。删掉列不做处理：那是破坏性操作，
+        # 真需要时应让用户删库重建。
+        wanted = (
+            ("prompt_tokens", "INTEGER NOT NULL DEFAULT 0"),
+            ("completion_tokens", "INTEGER NOT NULL DEFAULT 0"),
+            ("cached_tokens", "INTEGER NOT NULL DEFAULT 0"),
+        )
+
+        for column, spec in wanted:
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE records ADD COLUMN {column} {spec}")
+                # 旧的 tokens 列是三者的和，迁移时保留信息而非丢弃
+                if column == "prompt_tokens" and "tokens" in existing:
+                    self._conn.execute(
+                        "UPDATE records SET prompt_tokens = tokens WHERE tokens > 0"
+                    )
 
     # ------------------------------------------------------------------
     # 写入
@@ -70,8 +100,9 @@ class RecordStore:
             cur = self._conn.execute(
                 """INSERT INTO records
                    (created_at, time_display, ok, content, vision_warning,
-                    screenshot, width, height, size_kb, elapsed, tokens, error)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    screenshot, width, height, size_kb, elapsed,
+                    prompt_tokens, completion_tokens, cached_tokens, error)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     created,
                     record.get("time_display") or _fmt_time(created),
@@ -83,7 +114,9 @@ class RecordStore:
                     int(record.get("height") or 0),
                     int(record.get("size_kb") or 0),
                     float(record.get("elapsed") or 0.0),
-                    int(record.get("tokens") or 0),
+                    int(record.get("prompt_tokens") or 0),
+                    int(record.get("completion_tokens") or 0),
+                    int(record.get("cached_tokens") or 0),
                     record.get("error") or "",
                 ),
             )
@@ -106,18 +139,39 @@ class RecordStore:
         """统计概览，用于成本归因与健康检查。"""
         with self._lock:
             row = self._conn.execute(
-                """SELECT COUNT(*)          AS total,
-                          SUM(ok)            AS ok_count,
-                          AVG(elapsed)       AS avg_elapsed,
-                          SUM(size_kb)       AS total_kb
+                """SELECT COUNT(*)              AS total,
+                          SUM(ok)                AS ok_count,
+                          AVG(elapsed)           AS avg_elapsed,
+                          SUM(size_kb)           AS total_kb,
+                          SUM(prompt_tokens)     AS prompt_tokens,
+                          SUM(completion_tokens) AS completion_tokens,
+                          SUM(cached_tokens)     AS cached_tokens,
+                          -- 只对有 token 数据的记录求平均：旧记录是0
+                          -- （token 统计上线前产生的），计入会把均值拉低
+                          AVG(CASE WHEN prompt_tokens > 0
+                                   THEN prompt_tokens END) AS avg_prompt_tokens,
+                          SUM(CASE WHEN prompt_tokens > 0
+                                   THEN 1 ELSE 0 END)    AS token_samples
                    FROM records"""
             ).fetchone()
+        prompt = int(row["prompt_tokens"] or 0)
+        completion = int(row["completion_tokens"] or 0)
         return {
             "total": int(row["total"] or 0),
             "ok": int(row["ok_count"] or 0),
             "failed": int(row["total"] or 0) - int(row["ok_count"] or 0),
             "avg_elapsed": round(float(row["avg_elapsed"] or 0.0), 2),
             "total_kb": int(row["total_kb"] or 0),
+            # 视觉模型的成本主要在输入侧（一张截图 1000+ tokens），
+            # 所以把prompt 单独列出，而不是只给一个合计数
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": prompt + completion,
+            "cached_tokens": int(row["cached_tokens"] or 0),
+            "avg_prompt_tokens": int(row["avg_prompt_tokens"] or 0),
+            # 有 token 数据的样本数。平均值基于它计算，
+            # 分母不是总条数 —— 否则早期无 token 数据的记录会稀释结果
+            "token_samples": int(row["token_samples"] or 0),
         }
 
     # ------------------------------------------------------------------
@@ -164,7 +218,10 @@ class RecordStore:
             "height": row["height"],
             "size_kb": row["size_kb"],
             "elapsed": row["elapsed"],
-            "tokens": row["tokens"],
+            "prompt_tokens": row["prompt_tokens"],
+            "completion_tokens": row["completion_tokens"],
+            "total_tokens": row["prompt_tokens"] + row["completion_tokens"],
+            "cached_tokens": row["cached_tokens"],
             "error": row["error"],
         }
 

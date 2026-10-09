@@ -264,6 +264,7 @@ def _make_record(
     elapsed: float,
     vision_warning: str = "",
     error: str = "",
+    usage: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     """组装一条记录。
 
@@ -271,6 +272,7 @@ def _make_record(
     JPG 绑定在一起，因此可以在界面上展示缩略图，也能在删除记录时
     同步删掉图片——此前两者是完全脱钩的。
     """
+    usage = usage or {}
     now = datetime.now()
     return {
         "created_at": now.isoformat(timespec="seconds"),
@@ -283,7 +285,9 @@ def _make_record(
         "height": getattr(shot, "height", 0),
         "size_kb": getattr(shot, "size_kb", 0),
         "elapsed": round(elapsed, 2),
-        "tokens": 0,
+        "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+        "completion_tokens": int(usage.get("completion_tokens") or 0),
+        "cached_tokens": int(usage.get("cached_tokens") or 0),
         "error": error,
     }
 
@@ -335,7 +339,7 @@ async def do_capture(force: bool = False) -> Dict[str, Any]:
     logger.info(f"截图已捕获 {shot.width}x{shot.height}，约 {size_kb}KB，开始请求模型")
 
     try:
-        answer = await llm_client.chat_with_image(shot.base64)
+        answer, usage = await llm_client.chat_with_image_usage(shot.base64)
     except Exception as exc:
         elapsed = round(time.perf_counter() - started, 2)
         logger.error(f"模型调用失败: {exc}")
@@ -347,7 +351,19 @@ async def do_capture(force: bool = False) -> Dict[str, Any]:
 
     elapsed = round(time.perf_counter() - started, 2)
     vision_warning = _check_vision_issue(answer)
-    record = _make_record(shot, answer, ok=True, elapsed=elapsed, vision_warning=vision_warning)
+    record = _make_record(
+        shot,
+        answer,
+        ok=True,
+        elapsed=elapsed,
+        vision_warning=vision_warning,
+        usage=usage,
+    )
+    if usage:
+        logger.info(
+            f"Token 用量: 输入 {usage['prompt_tokens']} / 输出 {usage['completion_tokens']}"
+            f"（缓存命中 {usage['cached_tokens']}）"
+        )
     _persist(record)
 
     return {

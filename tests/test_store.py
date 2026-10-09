@@ -154,3 +154,108 @@ class TestPersistence:
         path = str(tmp_path / "records.db")
         RecordStore(path).close()
         RecordStore(path).close()  # 不抛异常即通过
+
+
+class TestTokenTracking:
+    """token 统计的持久化与聚合。
+
+    背景：此前 record 里的 tokens 字段恒为 0——字段建了但从没填，
+    所谓"成本可归因"实际只给了耗时和图片体积。
+    """
+
+    def test_tokens_roundtrip(self, store):
+        store.insert(make_record(
+            prompt_tokens=1165, completion_tokens=100, cached_tokens=0
+        ))
+        r = store.recent()[0]
+        assert r["prompt_tokens"] == 1165
+        assert r["completion_tokens"] == 100
+        # total 是派生字段，不单独存
+        assert r["total_tokens"] == 1265
+
+    def test_cached_tokens_persisted(self, store):
+        store.insert(make_record(prompt_tokens=2000, cached_tokens=1800))
+        assert store.recent()[0]["cached_tokens"] == 1800
+
+    def test_stats_aggregates_tokens(self, store):
+        store.insert(make_record(prompt_tokens=1000, completion_tokens=50))
+        store.insert(make_record(prompt_tokens=1500, completion_tokens=80))
+
+        s = store.stats()
+        assert s["prompt_tokens"] == 2500
+        assert s["completion_tokens"] == 130
+        assert s["total_tokens"] == 2630
+        assert s["avg_prompt_tokens"] == 1250
+
+    def test_stats_on_empty_store_has_zero_tokens(self, store):
+        s = store.stats()
+        assert s["total_tokens"] == 0
+        assert s["prompt_tokens"] == 0
+
+
+
+    def test_avg_prompt_tokens_ignores_legacy_zero_rows(self, store):
+        """旧记录 token=0（统计上线前产生），不应拉低平均值。"""
+        store.insert(make_record(prompt_tokens=0, completion_tokens=0))   # 旧记录
+        store.insert(make_record(prompt_tokens=0, completion_tokens=0))   # 旧记录
+        store.insert(make_record(prompt_tokens=1000, completion_tokens=100))
+
+        s = store.stats()
+        assert s["total"] == 3
+        assert s["prompt_tokens"] == 1000
+        # 平均值只基于有 token 的那 1 条，而不是 1000/3
+        assert s["avg_prompt_tokens"] == 1000
+        assert s["token_samples"] == 1
+
+
+class TestSchemaMigration:
+    """旧库升级：CREATE TABLE IF NOT EXISTS 不会给已有表加列。"""
+
+    def _columns(self, store):
+        return {r["name"] for r in store._conn.execute("PRAGMA table_info(records)")}
+
+    def test_migration_adds_missing_columns(self, tmp_path):
+        import sqlite3
+
+        path = tmp_path / "old.db"
+        # 造一个只有旧 schema 的库
+        old = sqlite3.connect(str(path))
+        old.execute(
+            """CREATE TABLE records (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL, time_display TEXT NOT NULL,
+                ok INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL DEFAULT '',
+                vision_warning TEXT NOT NULL DEFAULT '',
+                screenshot TEXT NOT NULL DEFAULT '',
+                width INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0,
+                size_kb INTEGER NOT NULL DEFAULT 0, elapsed REAL NOT NULL DEFAULT 0,
+                tokens INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT ''
+            )"""
+        )
+        old.execute(
+            """INSERT INTO records
+               (created_at, time_display, ok, content, tokens, error)
+               VALUES ('2026-10-09T10:00:00','10:00:00',1,'旧记录',999,'')"""
+        )
+        old.commit()
+        old.close()
+
+        # 打开时应自动补列，且旧数据不丢
+        s = RecordStore(str(path))
+        try:
+            assert {"prompt_tokens", "completion_tokens", "cached_tokens"} <= self._columns(s)
+            rows = s.recent()
+            assert len(rows) == 1
+            assert rows[0]["content"] == "旧记录"
+            # 旧的 tokens 值迁到 prompt_tokens，而不是丢弃
+            assert rows[0]["prompt_tokens"] == 999
+        finally:
+            s.close()
+
+    def test_migration_is_idempotent(self, tmp_path):
+        path = str(tmp_path / "r.db")
+        RecordStore(path).close()
+        s = RecordStore(path)   # 二次打开不应报错
+        s.close()
+
+

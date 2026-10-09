@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-90%20passed-success)](tests/)
+[![tests](https://img.shields.io/badge/tests-103%20passed-success)](tests/)
 
 <!-- 首屏放一张真实运行截图；没有截图的仓库在 GitHub 上很难留住人 -->
 
@@ -280,7 +280,7 @@ python main.py
 ├── server/
 │   ├── app.py                 # FastAPI 服务：REST + WebSocket 编排
 │   └── templates/index.html   # 移动端界面（单文件，无构建步骤）
-└── tests/                     # 90 个单元 / 集成测试
+└── tests/                     # 103 个单元 / 集成测试
 ```
 
 职责边界：`capture.py` 管怎么截屏、`llm_client.py` 管怎么调模型、
@@ -291,7 +291,7 @@ python main.py
 
 ```bash
 pip install -e ".[dev]"
-pytest                    # 90 个用例
+pytest                    # 103 个用例
 pytest --cov              # 覆盖率
 ```
 

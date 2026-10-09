@@ -145,15 +145,29 @@ class LLMClient:
         user_prompt: Optional[str] = None,
     ) -> str:
         """发送截图给模型，返回完整文本结果。"""
+        text, _ = await self.chat_with_image_usage(image_base64, user_prompt)
+        return text
+
+    async def chat_with_image_usage(
+        self,
+        image_base64: str,
+        user_prompt: Optional[str] = None,
+    ) -> tuple:
+        """发送截图给模型，返回 ``(文本, usage)``。
+
+        拆出这个方法是因为调用方需要 token 统计来做成本归因——
+        只返回文本的话，usage 会被白白丢掉（此前 tokens 字段恒为 0）。
+
+        :return: (回答文本, usage 字典)。usage 字段各厂商略有差异，
+                 缺失时统一为 0。
+        """
         if not image_base64:
             raise ValueError("截图为空，未发送请求")
 
-        logger.info(
-            f"请求模型 {self.model}，Base64 长度 {len(image_base64)}"
-        )
+        logger.info(f"请求模型 {self.model}，Base64 长度 {len(image_base64)}")
 
         if self._is_minimax:
-            return await self._call_minimax(image_base64, user_prompt)
+            return await self._call_minimax(image_base64, user_prompt), {}
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -180,11 +194,61 @@ class LLMClient:
             logger.error(f"模型服务错误 [{response.status_code}]: {detail}")
             raise RuntimeError(f"模型服务返回错误 ({response.status_code}): {detail}")
 
-        return self._extract_text(response.json(), "模型服务")
+        data = response.json()
+        return self._extract_text(data, "模型服务"), self._extract_usage(data)
 
     # ------------------------------------------------------------------
     # 响应解析与连通性测试
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_usage(payload: Any) -> Dict[str, int]:
+        """从响应中取出 token 用量。
+
+        视觉模型的成本主要来自 **prompt 侧** —— 一张 1920x1080 截图编码后
+        通常要1000+ tokens，而输出可能只有几十个。所以只记总量意义不大，
+        这里把输入/输出/缓存命中都拆开，才能看出"是图片贵还是输出贵"。
+
+        字段名各厂商有差异（DeepSeek 用 prompt_cache_hit_tokens，
+        部分服务用 prompt_tokens_details.cached_tokens），全部做兼容。
+        """
+        if not isinstance(payload, dict):
+            return {}
+
+        usage = payload.get("usage")
+        if not isinstance(usage, dict):
+            # 有些服务需显式请求才返回 usage，此时静默降级为 0
+            return {}
+
+        def pick(*names: str) -> int:
+            for key in names:
+                value = usage.get(key)
+                if isinstance(value, (int, float)):
+                    return int(value)
+            return 0
+
+        cached = pick("prompt_cache_hit_tokens")
+        details = usage.get("prompt_tokens_details")
+        if not cached and isinstance(details, dict):
+            cached = int(details.get("cached_tokens") or 0)
+
+        reasoning = 0
+        comp_details = usage.get("completion_tokens_details")
+        if isinstance(comp_details, dict):
+            reasoning = int(comp_details.get("reasoning_tokens") or 0)
+
+        prompt = pick("prompt_tokens", "input_tokens")
+        completion = pick("completion_tokens", "output_tokens")
+
+        return {
+            "prompt_tokens": prompt,
+            "completion_tokens": completion,
+            "total_tokens": pick("total_tokens") or (prompt + completion),
+            "cached_tokens": cached,
+            # 思考型模型的输出 token 里含reasoning_tokens，
+            # 单列出来才知道实际"可见输出"有多少
+            "reasoning_tokens": reasoning,
+        }
 
     @staticmethod
     def _extract_text(payload: Any, source: str) -> str:
