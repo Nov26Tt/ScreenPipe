@@ -10,8 +10,8 @@ jobs:
   test:
     # 本项目依赖 mss 截屏与 start.bat，只在 Windows 上可运行，
     # 因此矩阵只覆盖 Python 版本维度，不铺 Linux —— 铺了也只是空跑。
-    # 想在 Linux 上复用核心逻辑的话，capture.Capture 已经是惰性初始化，
-    # 无显示器时可以正常构造（见 has_display()），但截屏用例仍会失败。
+    # 若将来要支持 Linux：capture.Capture 已是惰性初始化，
+    # 无显示器时可正常构造（见 has_display()），但截屏用例仍会失败。
     name: Python ${{ matrix.python-version }}
     runs-on: windows-latest
     strategy:
@@ -36,7 +36,7 @@ jobs:
         run: pytest -v --tb=short
 
   # 密钥泄露是本项目最敏感的红线：服务监听 0.0.0.0 且无认证，
-  # 任何人都能访问 /api/config。单独跑一个 job 兜底。
+  # 任何人拿到仓库都能直接查 /api/config。单独跑一个 job 兜底。
   secret-scan:
     name: Secret leak guard
     runs-on: windows-latest
@@ -45,21 +45,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 用 shell: bash 显式指定 Git Bash，而不是 runner 默认的 PowerShell。
+      # 原因：下面两条命令都是「以非零码表示未命中」的探测型命令
+      # （git ls-files --error-unmatch / git grep 无匹配时均返回 1）。
+      # GitHub 的 PowerShell 7 会把 native 命令的 stderr 提升为
+      # terminating error（$ErrorActionPreference='stop'），
+      # 脚本会在 if 判断之前就中断 —— 表现为「明明没泄露却报失败」。
+      # Git Bash 的行为与 CI 上最初那版一致，且语义更直白。
       - name: Ensure no config file is tracked
+        shell: bash
         run: |
-          if git ls-files --error-unmatch config.yaml 2>$null; then
+          if git ls-files --error-unmatch config.yaml 2>/dev/null; then
             echo "::error::config.yaml 不应被提交到仓库"
             exit 1
-          }
+          fi
           echo "config.yaml 未被跟踪，符合预期"
 
       - name: Scan tracked files for hardcoded keys
+        shell: bash
         run: |
-          $pattern = '(sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16})'
-          $hits = git grep -nEI $pattern -- . ':!tests/' ':!*.md'
-          if ($hits) {
-            Write-Output "::error::检测到疑似硬编码密钥，请改用 config.yaml 或环境变量"
-            Write-Output $hits
+          # 匹配常见 API Key 前缀；命中即失败。
+          # 排除 tests/ 与 *.md —— 前者全是测试用的假 Key，
+          # 后者会引用这些假 Key 做示例。
+          PATTERN='(sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16})'
+          if git grep -nEI "$PATTERN" -- . ':!tests/' ':!*.md'; then
+            echo "::error::检测到疑似硬编码密钥，请改用 config.yaml 或环境变量"
             exit 1
-          }
+          fi
           echo "未检测到硬编码密钥"
