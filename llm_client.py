@@ -7,6 +7,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# 模型返回空内容时统一使用这个提示，避免前端出现「有卡片、无内容」的空白
+EMPTY_REPLY_MESSAGE = (
+    "大模型返回了空内容。常见原因："
+    "① 当前模型不支持图片输入；"
+    "② API Key 无效或额度不足；"
+    "③ 服务端临时异常。请在「设置」中检查模型与 Key 后重试。"
+)
+
 
 class LLMClient:
     """
@@ -85,9 +93,12 @@ class LLMClient:
                 if isinstance(data, dict) and data.get(field):
                     return data[field]
 
-            if isinstance(data, str):
+            if isinstance(data, str) and data.strip():
                 return data
-            return json.dumps(data, ensure_ascii=False)
+
+            # 取不到任何可用字段时明确报错，而不是把原始 JSON 当成答案显示
+            logger.error(f"MiniMax VLM 未返回可用内容: {str(data)[:300]}")
+            raise Exception(EMPTY_REPLY_MESSAGE)
 
     async def chat_with_image(self, image_base64: str,
                               user_prompt: Optional[str] = None) -> str:
@@ -125,7 +136,19 @@ class LLMClient:
                 raise Exception(f"LLM API 返回错误 ({response.status_code}): {error_text}")
 
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                logger.error(f"LLM 响应格式异常: {str(data)[:300]}")
+                raise Exception(
+                    f"大模型响应格式异常，未取到内容：{str(data)[:200]}"
+                ) from exc
+
+            if not content or not str(content).strip():
+                logger.error("LLM 返回了空内容")
+                raise Exception(EMPTY_REPLY_MESSAGE)
+
+            return content
 
     async def chat_with_image_stream(self, image_base64: str,
                                      user_prompt: Optional[str] = None) -> AsyncGenerator[str, None]:

@@ -265,6 +265,16 @@
       pointer-events: none;
     }
 
+    /* 错误提示：红色、更宽、停留更久，确保用户能看清 */
+    .toast-error {
+      background: #7f1d1d;
+      color: #fecaca;
+      max-width: 86vw;
+      text-align: center;
+      line-height: 1.5;
+      animation: toastIn 0.3s ease, toastOut 0.3s ease 5.5s forwards;
+    }
+
     @keyframes toastIn {
       from {
         opacity: 0;
@@ -397,6 +407,44 @@
     .vision-warning strong {
       color: #f87171;
     }
+
+    /* 错误 / 空状态提示 */
+    .alert {
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 6px 0;
+    }
+
+    .alert-error {
+      background: #2d1f1f;
+      border: 1px solid #5c3030;
+      color: #fca5a5;
+    }
+
+    .alert-warn {
+      background: #2d2a1a;
+      border: 1px solid #5c552d;
+      color: #fde68a;
+    }
+
+    .alert .alert-hint {
+      margin-top: 6px;
+      font-size: 12px;
+      opacity: 0.85;
+      line-height: 1.5;
+    }
+
+    /* 连接断开横幅 */
+    .conn-banner {
+      background: #7f1d1d;
+      color: #fecaca;
+      text-align: center;
+      padding: 10px 14px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 
@@ -409,6 +457,11 @@
       <span id="statusText">等待连接...</span>
     </div>
   </header>
+
+  <!-- 连接异常横幅：明确告知用户当前收不到结果的原因 -->
+  <div class="conn-banner" id="connBanner" style="display:none">
+    ⚠️ 与电脑端的连接已断开，正在自动重连…… 请确认电脑上的服务窗口仍在运行
+  </div>
 
   <div class="container">
 
@@ -434,6 +487,9 @@
     <!-- 设置面板 -->
     <div class="card settings-panel" id="panelSettings">
       <div class="card-title">⚙️ 大模型设置</div>
+
+      <!-- 设置加载失败时在此处给出可见提示 -->
+      <div id="settingsAlert"></div>
 
       <div class="vision-warning">
         <strong>⚠️ 重要：必须使用支持图片识别的多模态（Vision）模型！</strong><br>
@@ -532,12 +588,26 @@
       };
 
       ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        handleMessage(msg);
+        let msg = null;
+        try {
+          msg = JSON.parse(e.data);
+        } catch (err) {
+          // 解析失败必须让用户看见，否则就是一次静默丢消息
+          console.error('消息解析失败', e.data);
+          showToast('❌ 收到无法解析的消息，已忽略');
+          return;
+        }
+        try {
+          handleMessage(msg);
+        } catch (err) {
+          console.error('消息处理失败', err);
+          showToast('❌ 处理消息出错: ' + err.message);
+        }
       };
 
       ws.onclose = () => {
         updateStatus('disconnected', '连接断开，重连中...');
+        setConnBanner(true);
         if (!reconnectTimer) {
           reconnectTimer = setInterval(connectWS, 3000);
         }
@@ -545,35 +615,74 @@
 
       ws.onerror = () => {
         updateStatus('disconnected', '连接错误');
+        setConnBanner(true);
       };
+    }
+
+    // 连接异常横幅：让「收不到结果」这件事有明确解释，而不是一片空白
+    function setConnBanner(show) {
+      const banner = document.getElementById('connBanner');
+      if (banner) banner.style.display = show ? '' : 'none';
     }
 
     function sendWS(data) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(data));
+        return true;
       }
+      showToast('⚠️ 尚未连接到电脑端，请等待重连后再试');
+      return false;
     }
 
     function handleMessage(msg) {
+      if (!msg || typeof msg !== 'object') {
+        showToast('❌ 收到无法识别的消息');
+        return;
+      }
+
       switch (msg.type) {
         case 'answer':
+          if (!msg.data) {
+            showToast('❌ 服务端推送了一条空结果');
+            break;
+          }
           addAnswerCard(msg.data, true);
           break;
-        case 'status':
-          updateStatus(msg.data.capture_running ? 'capturing' : 'connected',
-            msg.data.message || (msg.data.capture_running ? '监控中...' : '已就绪'));
+
+        case 'status': {
+          const data = msg.data || {};
+          updateStatus(
+            data.capture_running ? 'capturing' : 'connected',
+            data.message || (data.capture_running ? '监控中...' : '已就绪')
+          );
           break;
+        }
+
         case 'history':
           renderHistory(msg.data);
           break;
-        case 'capture_result':
-          if (msg.data.ok && !msg.data.skipped) {
-            addAnswerCard(msg.data.record, false);
+
+        case 'capture_result': {
+          const data = msg.data || {};
+          if (!data.ok) {
+            // 之前这里什么都不做，用户完全不知道失败了
+            showToast('❌ ' + (data.error || '截图分析失败'));
+          } else if (data.skipped) {
+            showToast('ℹ️ ' + (data.reason || '屏幕内容未变化，已跳过'));
+          } else if (data.record) {
+            addAnswerCard(data.record, false);
+          } else {
+            showToast('⚠️ 分析完成，但没有返回任何内容');
           }
           break;
+        }
+
         case 'error':
-          showToast('❌ ' + msg.data.message);
+          showToast('❌ ' + ((msg.data && msg.data.message) || '服务端出现错误'));
           break;
+
+        default:
+          console.warn('未知消息类型', msg);
       }
     }
 
@@ -601,25 +710,58 @@
       }
     }
 
-    function addAnswerCard(record, prepend) {
-      const list = document.getElementById('historyList');
-      const empty = list.querySelector('.empty-state');
-      if (empty) empty.remove();
+    // 统一构造「答案正文」：内容为空时给出明确提示，而不是留一片空白
+    function buildAnswerBody(record) {
+      const raw = record ? record.content : null;
+      const text = (raw === null || raw === undefined) ? '' : String(raw);
 
+      if (text.trim() === '') {
+        return `<div class="alert alert-error">
+          ⚠️ 本次没有返回任何内容
+          <div class="alert-hint">
+            可能原因：模型未响应、返回了空内容、或网络中断。<br>
+            请到「设置」检查模型与 API Key，然后重新截图。
+          </div>
+        </div>`;
+      }
+
+      return `<div class="answer-content">${escapeHtml(text)}</div>`;
+    }
+
+    // 统一构造一张答案卡片
+    function buildAnswerCard(record) {
       const div = document.createElement('div');
       div.className = 'answer-card';
 
+      const time = (record && record.time) ? escapeHtml(record.time) : '--:--:--';
+
       let warningHtml = '';
-      if (record.vision_warning) {
-        warningHtml = `<div class="vision-warning"><strong>${escapeHtml(record.vision_warning)}</strong></div>`;
+      if (record && record.vision_warning) {
+        warningHtml =
+          `<div class="vision-warning"><strong>${escapeHtml(record.vision_warning)}</strong></div>`;
       }
 
       div.innerHTML = `
-        <div class="answer-time">${record.time}</div>
+        <div class="answer-time">${time}</div>
         ${warningHtml}
-        <div class="answer-content">${escapeHtml(record.content)}</div>
+        ${buildAnswerBody(record)}
       `;
+      return div;
+    }
 
+    function addAnswerCard(record, prepend) {
+      const list = document.getElementById('historyList');
+      if (!list) return;
+
+      if (!record) {
+        showToast('❌ 收到一条空的结果，已忽略');
+        return;
+      }
+
+      const empty = list.querySelector('.empty-state');
+      if (empty) empty.remove();
+
+      const div = buildAnswerCard(record);
       if (prepend) {
         list.insertBefore(div, list.firstChild);
       } else {
@@ -637,21 +779,9 @@
       if (!records || records.length === 0) {
         list.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div>暂无记录</div></div>';
       } else {
-        records.reverse().forEach(r => {
-          const div = document.createElement('div');
-          div.className = 'answer-card';
-
-          let warningHtml = '';
-          if (r.vision_warning) {
-            warningHtml = `<div class="vision-warning"><strong>${escapeHtml(r.vision_warning)}</strong></div>`;
-          }
-
-          div.innerHTML = `
-            <div class="answer-time">${r.time}</div>
-            ${warningHtml}
-            <div class="answer-content">${escapeHtml(r.content)}</div>
-          `;
-          list.appendChild(div);
+        // slice() 避免 reverse() 直接改动传入的数组
+        records.slice().reverse().forEach(r => {
+          list.appendChild(buildAnswerCard(r));
         });
       }
       updateHistoryCount();
@@ -663,13 +793,40 @@
     }
 
     // ==================== 操作 ====================
+    // 统一的 POST 封装：网络异常、非 2xx、响应非 JSON 都会抛出可读的错误
+    async function postJSON(url, body) {
+      const options = { method: 'POST' };
+      if (body !== undefined) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify(body);
+      }
+
+      let resp;
+      try {
+        resp = await fetch(url, options);
+      } catch (e) {
+        throw new Error('无法连接到电脑端服务（' + e.message + '）');
+      }
+
+      if (!resp.ok) {
+        throw new Error('服务端返回 HTTP ' + resp.status);
+      }
+
+      try {
+        return await resp.json();
+      } catch (e) {
+        throw new Error('服务端返回了非 JSON 内容');
+      }
+    }
+
     async function startCapture() {
       try {
-        const resp = await fetch('/api/start-capture', { method: 'POST' });
-        const data = await resp.json();
+        const data = await postJSON('/api/start-capture');
         if (data.ok) {
           updateStatus('capturing', '监控运行中...');
           showToast('✅ 自动截图已启动');
+        } else {
+          showToast('❌ ' + (data.message || data.error || '启动失败'));
         }
       } catch (e) {
         showToast('❌ 启动失败: ' + e.message);
@@ -678,38 +835,43 @@
 
     async function stopCapture() {
       try {
-        const resp = await fetch('/api/stop-capture', { method: 'POST' });
-        const data = await resp.json();
+        const data = await postJSON('/api/stop-capture');
         if (data.ok) {
           updateStatus('connected', '已停止监控');
           showToast('⏹ 已停止');
+        } else {
+          showToast('❌ ' + (data.message || data.error || '停止失败'));
         }
       } catch (e) {
-        showToast('❌ 停止失败');
+        showToast('❌ 停止失败: ' + e.message);
       }
     }
 
     async function captureOnce() {
       showToast('正在截图分析...');
       try {
-        const resp = await fetch('/api/capture-once', { method: 'POST' });
-        const data = await resp.json();
-        if (data.ok) {
-          if (data.skipped) {
-            showToast('屏幕内容未变化，已跳过');
-          } else {
-            showToast('分析完成');
-          }
+        const data = await postJSON('/api/capture-once');
+        if (!data.ok) {
+          showToast('❌ ' + (data.error || '分析失败'));
+        } else if (data.skipped) {
+          showToast('ℹ️ ' + (data.reason || '屏幕内容未变化，已跳过'));
+        } else if (data.answer && String(data.answer).trim() !== '') {
+          showToast('✅ 分析完成');
         } else {
-          showToast('失败: ' + (data.error || '分析失败'));
+          showToast('⚠️ 分析完成，但返回内容为空，请检查模型设置');
         }
       } catch (e) {
-        showToast('请求失败');
+        showToast('❌ 请求失败: ' + e.message);
       }
     }
 
     async function clearHistory() {
-      await fetch('/api/clear-history', { method: 'POST' });
+      try {
+        await postJSON('/api/clear-history');
+      } catch (e) {
+        showToast('❌ 清空失败: ' + e.message);
+        return;
+      }
       document.getElementById('historyList').innerHTML =
         '<div class="empty-state"><div class="icon">📭</div><div>暂无记录</div></div>';
       updateHistoryCount();
@@ -717,18 +879,47 @@
     }
 
     // ==================== 设置 ====================
+    // 设置面板内的可见提示（此前失败只写进 console，用户完全看不到）
+    function showSettingsAlert(text) {
+      const box = document.getElementById('settingsAlert');
+      if (!box) return;
+      box.innerHTML = `<div class="alert alert-error">${escapeHtml(text)}</div>`;
+    }
+
+    function clearSettingsAlert() {
+      const box = document.getElementById('settingsAlert');
+      if (box) box.innerHTML = '';
+    }
+
     async function loadSettings() {
       try {
         const resp = await fetch('/api/config');
+        if (!resp.ok) {
+          throw new Error('服务端返回 HTTP ' + resp.status);
+        }
         const cfg = await resp.json();
 
-        document.getElementById('apiBase').value = cfg.llm?.api_base || '';
-        document.getElementById('apiKey').value = cfg.llm?.api_key || '';
-        document.getElementById('model').value = cfg.llm?.model || '';
-        document.getElementById('systemPrompt').value = cfg.llm?.system_prompt || '';
+        if (!cfg || !cfg.llm) {
+          showSettingsAlert('⚠️ 服务端返回的配置为空，无法载入设置。请确认电脑上的服务窗口运行正常。');
+          return;
+        }
+
+        document.getElementById('apiBase').value = cfg.llm.api_base || '';
+        document.getElementById('apiKey').value = cfg.llm.api_key || '';
+        document.getElementById('model').value = cfg.llm.model || '';
+        document.getElementById('systemPrompt').value = cfg.llm.system_prompt || '';
         document.getElementById('captureInterval').value = cfg.capture?.interval || 5;
+
+        if (!cfg.llm.api_key || cfg.llm.api_key === 'your-api-key-here') {
+          showSettingsAlert('⚠️ 还没有填写 API Key。请填写后点「保存设置」，否则截图无法识别。');
+        } else {
+          clearSettingsAlert();
+        }
       } catch (e) {
         console.error('加载设置失败', e);
+        showSettingsAlert(
+          '⚠️ 加载设置失败：' + e.message + '。请确认电脑上的服务窗口仍在运行，然后刷新页面重试。'
+        );
       }
     }
 
@@ -836,18 +1027,34 @@
 
     // ==================== 工具函数 ====================
     function escapeHtml(text) {
+      // null / undefined 一律返回空串，避免界面上出现 "undefined"
+      if (text === null || text === undefined) return '';
       const div = document.createElement('div');
-      div.textContent = text;
+      div.textContent = String(text);
       return div.innerHTML;
     }
 
     function showToast(message) {
+      // 以 ❌ / ⚠️ 开头的消息视为错误：变红、加宽并停留更久，确保看得清
+      const isError = /^[❌⚠️]/.test(String(message));
       const toast = document.createElement('div');
-      toast.className = 'toast';
+      toast.className = isError ? 'toast toast-error' : 'toast';
       toast.textContent = message;
       document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 2500);
+      setTimeout(() => toast.remove(), isError ? 6000 : 2500);
     }
+
+    // ==================== 全局兜底 ====================
+    // 未捕获的异常也要弹提示，避免出现"界面空白、只有控制台才知道出错"
+    window.addEventListener('error', (e) => {
+      showToast('❌ 页面异常: ' + (e.message || '未知错误'));
+    });
+
+    window.addEventListener('unhandledrejection', (e) => {
+      const reason = e.reason;
+      const text = (reason && reason.message) ? reason.message : String(reason || '未知错误');
+      showToast('❌ 操作失败: ' + text);
+    });
 
     // ==================== 初始化 ====================
     async function init() {
@@ -857,11 +1064,14 @@
       // 获取接入地址
       try {
         const resp = await fetch('/api/ip');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
+        if (!data || !data.ip) throw new Error('返回数据不完整');
         document.getElementById('accessUrl').textContent =
           `http://${data.ip}:${data.port}`;
       } catch (e) {
-        document.getElementById('accessUrl').textContent = location.href;
+        console.error('获取接入地址失败', e);
+        document.getElementById('accessUrl').textContent = '地址获取失败，请用当前页面地址';
       }
     }
 
