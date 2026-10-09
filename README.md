@@ -122,7 +122,8 @@ python main.py
 
 | 服务商 | 模型 | `api_base` | 备注 |
 | --- | --- | --- | --- |
-| 智谱 | `glm-4.6v-flash` | `https://open.bigmodel.cn/api/paas/v4` | **免费档，默认值** |
+| DeepSeek | `deepseek-flash` | `https://api.deepseek.com` | **默认值**，上下文 1M |
+| 智谱 | `glm-4.6v-flash` | `https://open.bigmodel.cn/api/paas/v4` | 免费档 |
 | 阿里百炼 | `qwen3-vl-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 新用户限免 |
 | Ollama 本地 | `qwen3-vl:8b` | `http://localhost:11434/v1` | **图片不出本机** |
 | 智谱 | `glm-4.6v` | 同上 | 付费，中文 OCR 较强 |
@@ -135,11 +136,25 @@ python main.py
 请以对应厂商官方文档为准。网页端「设置」里内置了这些预设，选择即自动填入。
 
 <details>
-<summary>关于 DeepSeek</summary>
+<summary>DeepSeek 的视觉能力与模型名沿革</summary>
 
-DeepSeek 官方 API（`api.deepseek.com`）当前提供的是**纯文本**模型，
-不接受图片输入，因此**不能**用于本项目。DeepSeek-VL 系列是开源权重，
-需自行部署后再通过Ollama / vLLM 接入。
+`deepseek-flash` 是 DeepSeek API 当前的模型名，实际对应 **DeepSeek-V4.1-Flash**，
+**原生支持图片输入**（JPEG / PNG / GIF / WebP，单图最多 1024 tokens），
+上下文 1M，最大输出 384K。
+
+几个容易踩坑的历史名称：
+
+| 名称 | 状态 |
+| --- | --- |
+| `deepseek-flash` | ✅ 现役，视觉可用 |
+| `deepseek-v4-pro` | ⚠️ 纯文本，**不支持**图片输入 |
+| `deepseek-v4-flash` | 已退役，请求由 V4.1-Flash 承接 |
+| `deepseek-v4-flash-vision-exp` | 2026-09-10 退役，能力并入 `deepseek-flash` |
+
+旧名仍被接受且按 Flash 价计费，但新接入请直接用 `deepseek-flash`。
+
+图片以 `data:image/jpeg;base64,...` 内联传入（本项目即采用这种方式），
+**只能出现在 user 消息中**，放进 system 或 assistant 会返回 400。
 </details>
 
 ## 配置
@@ -153,9 +168,9 @@ DeepSeek 官方 API（`api.deepseek.com`）当前提供的是**纯文本**模型
 | `capture.region` | 截屏区域 `[left, top, width, height]` | 全屏 |
 | `capture.save_dir` | 截图落盘目录，留空用 `screenshots/` | `screenshots/` |
 | `history.max_records` | 内存中保留的记录条数（超出自动淘汰） | `200` |
-| `llm.api_base` | OpenAI 兼容地址，程序会拼接 `/chat/completions` | 智谱 |
+| `llm.api_base` | OpenAI 兼容地址，程序会拼接 `/chat/completions` | DeepSeek |
 | `llm.api_key` | 密钥（`config.yaml` 已被 gitignore） | 占位符 |
-| `llm.model` | **必须是视觉模型** | `glm-4.6v-flash` |
+| `llm.model` | **必须是视觉模型** | `deepseek-flash` |
 | `llm.system_prompt` | 留空则用内置提示词 | 内置 |
 | `server.host` | 监听地址，手机访问需保持 `0.0.0.0` | `0.0.0.0` |
 | `server.port` | 监听端口，被占用时自动向后探测 | `8765` |

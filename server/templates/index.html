@@ -494,8 +494,10 @@
       <div class="vision-warning">
         <strong>⚠️ 必须使用支持图片输入的视觉（多模态）模型</strong><br>
         纯文本模型无法处理截图，调用会失败或返回"未收到图片"。<br>
+        ✅ <code>deepseek-flash</code>（默认，实为 V4.1-Flash，原生支持图片）<br>
+        ⚠️ 同门注意：<code>deepseek-v4-pro</code> 是<b>纯文本</b>，看不到图<br>
         ✅ 免费可选：<code>glm-4.6v-flash</code>（智谱）、<code>qwen3-vl-flash</code>（阿里百炼限免）<br>
-        💰 付费可选：<code>glm-4.6v</code>、<code>qwen3-vl-plus</code>、<code>doubao-seed-2-0-lite</code>、<code>kimi-k2.6</code><br>
+        💰 付费可选：<code>qwen3-vl-plus</code>、<code>doubao-seed-2-0-lite</code>、<code>kimi-k2.6</code><br>
         🔒 本地可选：<code>qwen3-vl:8b</code>（经 Ollama，截图不出本机）<br>
         📌 模型名随厂商快速迭代，下方预设核实于 2026-10，失败时请以官方文档为准。
       </div>
@@ -504,6 +506,7 @@
         <label>服务商快速选择</label>
         <select id="llmPreset" onchange="applyPreset()">
           <option value="custom">自定义</option>
+          <option value="deepseek">DeepSeek deepseek-flash（默认，1M 上下文）</option>
           <option value="zhipu_free">智谱 GLM-4.6V-Flash（免费）</option>
           <option value="qwen_free">阿里百炼 Qwen3-VL-Flash（限免）</option>
           <option value="ollama">Ollama 本地部署（图片不出本机）</option>
@@ -519,7 +522,7 @@
 
       <div class="form-group">
         <label>API 地址</label>
-        <input type="text" id="apiBase" placeholder="https://open.bigmodel.cn/api/paas/v4">
+        <input type="text" id="apiBase" placeholder="https://api.deepseek.com">
       </div>
 
       <div class="form-group">
@@ -529,7 +532,7 @@
 
       <div class="form-group">
         <label>模型名称</label>
-        <input type="text" id="model" placeholder="glm-4.6v-flash">
+        <input type="text" id="model" placeholder="deepseek-flash">
       </div>
 
       <div class="form-group">
@@ -979,6 +982,7 @@
       // 模型名均取自各厂商官方文档（核实于 2026-10）。
       //厂商迭代很快，若调用返回 model not found，请以官方模型列表为准。
       const presets = {
+        deepseek:   { base: 'https://api.deepseek.com', model: 'deepseek-flash' },
         zhipu_free: { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v-flash' },
         zhipu:      { base: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v' },
         qwen_free:  { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-vl-flash' },
@@ -990,6 +994,7 @@
         openai:     { base: 'https://api.openai.com/v1', model: 'gpt-4.1' },
         minimax:    { base: 'https://api.minimax.chat/v1', model: '' }
       };
+      // 注意：DeepSeek 只有 Flash 支持图片输入，deepseek-v4-pro 是纯文本。
       // 注：MiniMax 走专用 VLM 端点，请求中不发送 model 字段。
       // 注：Ollama 走本地部署时截图不出本机，适合对隐私敏感的场景。
 

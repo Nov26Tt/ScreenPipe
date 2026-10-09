@@ -21,11 +21,11 @@ import yaml
 # ---------------------------------------------------------------------------
 DEFAULTS: Dict[str, Any] = {
     "llm": {
-        # 智谱 glm-4.6v-flash：免费档支持图片输入，开箱即可跑通。
-        # 用法见 README「选择视觉模型」。
-        "api_base": "https://open.bigmodel.cn/api/paas/v4",
+        # deepseek-flash（实为 DeepSeek-V4.1-Flash）原生支持图片输入，
+        # 上下文 1M，是本项目的默认模型。用法见 README「选择视觉模型」。
+        "api_base": "https://api.deepseek.com",
         "api_key": "your-api-key-here",
-        "model": "glm-4.6v-flash",
+        "model": "deepseek-flash",
         "system_prompt": (
             "你是一个屏幕内容理解助手。请识别截图中的内容并输出结构化结果。"
         ),

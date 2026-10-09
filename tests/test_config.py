@@ -111,9 +111,11 @@ class TestConfigLoad:
         assert reloaded.to_dict()["llm"]["model"] == "qwen3-vl-plus"
         assert reloaded.to_dict()["llm"]["api_key"] == "sk-roundtrip-1234"
 
-    def test_defaults_use_a_free_vision_model(self):
-        """默认模型必须是确定支持图片输入的，否则新用户开箱即错。"""
-        assert DEFAULTS["llm"]["model"] == "glm-4.6v-flash"
+    def test_defaults_use_a_confirmed_vision_model(self):
+        """默认模型必须确认支持图片输入，否则新用户开箱即错。
 
-    def test_defaults_avoid_the_frozen_placeholder_key(self):
-        assert "deepseek" not in DEFAULTS["llm"]["api_base"]
+        deepseek-flash 实为 DeepSeek-V4.1-Flash，2026-09-10 起原生支持
+        图片输入（同门deepseek-v4-pro 是纯文本，不能用）。
+        """
+        assert DEFAULTS["llm"]["model"] == "deepseek-flash"
+        assert DEFAULTS["llm"]["api_base"] == "https://api.deepseek.com"
