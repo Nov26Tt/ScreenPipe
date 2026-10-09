@@ -1,7 +1,12 @@
-mss>=9.0.0
-pillow>=10.0.0
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-websockets>=12.0
-httpx>=0.25.0
-pyyaml>=6.0
+# ScreenPipe 运行依赖
+#
+# 版本下限为兼容 Python 3.10+ 的保守取值；实际安装会在此基础上
+# 解析出各包当前可用版本。需要锁版本请用 `pip freeze > requirements.lock`。
+
+mss>=9.0.0                 # 跨平台屏幕捕获
+pillow>=10.0.0             # 像素处理与 JPEG 编码
+fastapi>=0.104.0           # HTTP + WebSocket 服务
+uvicorn[standard]>=0.24.0  # ASGI 服务器
+websockets>=12.0           # WebSocket 协议支持
+httpx>=0.25.0              # 异步 HTTP 客户端（调用模型 API）
+pyyaml>=6.0                # 配置文件读写
