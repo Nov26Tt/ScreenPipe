@@ -1,34 +1,52 @@
 # ============================================================
-# 配置模板
-# 用法：复制本文件并重命名为 config.yaml，然后填入你自己的配置
-#      config.yaml 已被 .gitignore 忽略，不会被提交到仓库
+# ScreenPipe 配置文件模板
+#
+# 用法：复制本文件为 config.yaml 后填入自己的配置。
+#       config.yaml 已被 .gitignore 忽略，不会提交到仓库。
+# 全部配置项及默认值见 README。
 # ============================================================
 
 capture:
-  interval: 10          # 自动截图间隔（秒）
-  quality: 60           # JPEG 压缩质量（1-95）
-  # region: [0, 0, 1920, 1080]   # 可选：指定截屏区域 [left, top, width, height]
+  # 自动截图间隔（秒）。屏幕内容无变化时会自动跳过模型调用，
+  # 因此这个值可以设得比较小而不担心烧 Token。
+  interval: 10
+
+  # JPEG 压缩质量（1-95）。越低体积越小、传输越快，但小字会变糊。
+  # 截图以 base64 内联进请求体，质量过低会直接影响 OCR 准确率。
+  quality: 60
+
+  # 截图落盘目录。留空则使用项目下的 screenshots/。
+  # 用于留存原始画面便于回溯。
+  save_dir: ""
+
+  # 只截取指定区域，可显著降低图片体积与识别噪音。
+  # 格式：[left, top, width, height]，注释掉则截取主显示器全屏。
+  # region: [0, 0, 1920, 1080]
 
 history:
-  max_records: 200      # 历史记录最多保留条数
+  # 内存中保留的解析记录条数，超出后自动淘汰最旧的。
+  max_records: 200
 
 llm:
-  # 任意 OpenAI 兼容 API 地址，例如：
-  #   https://api.deepseek.com/v1
-  #   https://api.openai.com/v1
-  api_base: https://api.deepseek.com/v1
-  api_key: your-api-key-here          # ← 填入你自己的 Key，切勿泄露
-  # 必须使用支持图片识别的视觉模型，例如：
-  #   OpenAI      gpt-5.6-terra          DeepSeek     deepseek-flash
-  #   通义千问     qwen3-vl-plus          智谱 AI      glm-4.6v
-  #   豆包         doubao-seed-1.6-vision
-  #   Moonshot    kimi-k2.6             本地 Ollama  qwen3.5:9b
-  # 模型名会随厂商快速迭代，请以各厂商官方文档为准
-  model: deepseek-flash
-  system_prompt: "你是一个学习辅助AI。请识别截图中的题目并给出解析。"
+  # 任意 OpenAI 兼容地址。程序会在其后拼接 /chat/completions。
+  # 这里用的是智谱的免费视觉模型，开箱即可跑通；
+  # 换成阿里百炼 / 火山方舟 / Moonshot / 本地 Ollama 只需改这里和 model。
+  api_base: https://open.bigmodel.cn/api/paas/v4
+  api_key: your-api-key-here
+  # 必须是支持图片输入的视觉（多模态）模型，纯文本模型无法处理截图。
+  # 免费可选：glm-4.6v-flash
+  # 付费可选：glm-4.6v / qwen3-vl-plus / doubao-seed-2-0-lite / kimi-k2.6
+  # 本地可选：qwen3-vl:8b（经 Ollama，图片不出本机）
+  model: glm-4.6v-flash
+
+  # 留空则使用 llm_client.py 中的内置提示词。
+  # 想要固定输出格式（比如纯 JSON）时在这里覆盖它。
+  system_prompt: ""
 
 server:
+  # 监听地址。手机要访问就必须保持 0.0.0.0。
+  # 提醒：服务无内置认证，请勿直接暴露到公网。
   host: 0.0.0.0
-  # 默认使用不常用端口，避开 8000 / 8080 / 3000 等常见开发端口；
-  # 若该端口仍被占用，启动时会自动向后探测并打印实际使用端口。
+  # 默认端口，已避开 8000 / 8080 / 3000 等常见开发端口。
+  # 被占用时程序会自动向后探测并打印实际端口。
   port: 8765
