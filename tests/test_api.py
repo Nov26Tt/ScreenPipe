@@ -76,6 +76,71 @@ class TestStatusShape:
         assert "ScreenPipe" in resp.text
 
 
+class TestApiSurface:
+    """钉住对外端点清单。
+
+    背景：重写 ``server/app.py`` 时曾漏掉 ``/api/ip``，前端因此一直显示
+    「地址获取失败」而没人发现。端点被静默删掉是这类重构最容易犯的错，
+    用测试守住清单，新加端点时也会被提醒同步这里。
+    """
+
+    EXPECTED_PATHS = {
+        "/",
+        "/api/status",
+        "/api/config",
+        "/api/test-llm",
+        "/api/test-llm-direct",
+        "/api/history",
+        "/api/clear-history",
+        "/api/capture-once",
+        "/api/start-capture",
+        "/api/stop-capture",
+        "/api/ip",
+        "/ws",
+    }
+
+    def _registered(self) -> set:
+        paths = set()
+        for route in app_module.app.routes:
+            path = getattr(route, "path", None)
+            if path:
+                paths.add(path)
+        return paths
+
+    def test_no_endpoint_is_missing(self):
+        missing = self.EXPECTED_PATHS - self._registered()
+        assert not missing, f"缺少端点：{sorted(missing)}"
+
+    def test_ip_endpoint_returns_usable_address(self, client):
+        """手机不能用 127.0.0.1 访问电脑，报头必须给出局域网 IP。"""
+        resp = client.get("/api/ip")
+        assert resp.status_code == 200
+
+        body = resp.json()
+        assert body.get("ip"), "未返回 IP"
+        assert isinstance(body.get("port"), int)
+        # 兜底值之外都应是真实局域网地址
+        assert body["ip"].count(".") == 3
+
+    def test_front_end_referenced_endpoints_all_exist(self):
+        """页面里 fetch 到的每个 /api 路径都必须在服务端真实存在。"""
+        import re
+        from pathlib import Path
+
+        page = (
+            Path(__file__).parent.parent / "server" / "templates" / "index.html"
+        ).read_text(encoding="utf-8")
+
+        called = set(re.findall(r"fetch\(\s*['\"](/[^'\"]*)['\"]", page))
+        # 只校验我们自己定义的路径，静态资源等非 API 路径跳过
+        api_paths = {p for p in called if p.startswith("/api")}
+
+        missing = api_paths - self._registered()
+        assert not missing, (
+            f"前端调用了服务端不存在的端点：{sorted(missing)}"
+        )
+
+
 class TestVisionIssueDetection:
     @pytest.mark.parametrize(
         "reply",
