@@ -67,8 +67,6 @@
       font-size: 15px;
       line-height: 1.6;
       overflow-x: hidden;
-      /* 底部为悬浮 dock 留出呼吸空间 */
-      padding-bottom: calc(104px + env(safe-area-inset-bottom));
 
       /* 排版：行高略放大，中文在小屏上更易读 */
       -webkit-font-smoothing: antialiased;
@@ -213,7 +211,10 @@
       z-index: 1;
       max-width: 640px;
       margin: 0 auto;
-      padding: 0 24px;
+      /* 底部内边距避让悬浮 dock。
+         不能靠 body 的 padding-bottom —— 那只在页面滚到底时才生效，
+         而 dock 是 fixed，滚动过程中始终悬浮，会盖住中间位置的输入框。 */
+      padding: 0 24px calc(96px + env(safe-area-inset-bottom));
     }
 
     .section-title {

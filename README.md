@@ -9,7 +9,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![tests](https://img.shields.io/badge/tests-103%20passed-success)](tests/)
 
-<!-- 首屏放一张真实运行截图；没有截图的仓库在 GitHub 上很难留住人 -->
+<p align="center">
+  <img src="docs/screenshots/phone-console.png" width="300"
+       alt="手机端控制台：显示局域网访问地址、开始监控按钮与解析记录列表">
+  <img src="docs/screenshots/phone-settings.png" width="300"
+       alt="手机端设置页：服务商、API 地址、区域预设与 JSON 开关">
+</p>
+
+<p align="center">
+  <sub>左：手机端控制台 &nbsp;·&nbsp; 右：手机端设置页</sub>
+</p>
 
 ## 功能
 
@@ -21,11 +30,30 @@
 | 截图与记录绑定 | 点开缩略图即可核对「模型当时看到的是什么」 |
 | 自动清理 | 截图按**天数 + 张数**双阈值回收，不让磁盘无限增长 |
 | 区域预设 | `left_half` / `right_half` / `center`，只截目标区域省Token 也降噪 |
-| 成本可见 | 每条记录带耗时与图片体积 |
+| 成本可见 | 每条记录带**耗时、Token 用量、图片体积**，可归因到单次请求 |
 | markdown 渲染 | 表格、列表、代码块正常显示（手写实现，无 CDN 依赖） |
 | JSON 输出模式 | 结果可被程序直接消费，而不只是给人阅读 |
 | 配置热更新 | 网页端改配置立即生效，密钥不回显明文 |
 | 视觉能力提醒 | 检测到模型未识图时主动告警，避免误用纯文本模型 |
+## 界面
+
+**电脑端 · 控制台**
+
+<img src="docs/screenshots/web-console.png" alt="电脑端控制台：开始监控、手动截图与解析记录">
+
+**电脑端 · 设置**
+
+<img src="docs/screenshots/web-settings.png" alt="电脑端设置页：服务商选择、API 地址、模型名称与区域预设">
+
+<p align="center">
+  <img src="docs/screenshots/web-settings-stats.png" width="720"
+       alt="设置页底部：强制 JSON 开关、清空记录按钮与成本统计">
+</p>
+
+<p align="center"><sub>设置页底部 —— 强制 JSON 开关、成本统计与清空操作</sub></p>
+
+---
+
 
 ---
 
@@ -276,6 +304,7 @@ python main.py
 ├── pyproject.toml             # 包元数据与依赖声明
 ├── config.example.yaml        # 配置模板
 ├── requirements.txt           # 依赖清单
+├── docs/screenshots/           # README 用的界面截图
 ├── records.db                 # 运行时生成（已 gitignore）
 ├── server/
 │   ├── app.py                 # FastAPI 服务：REST + WebSocket 编排
