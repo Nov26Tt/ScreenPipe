@@ -710,13 +710,21 @@
     }
 
     .switch {
-      /* 必须声明relative：内部 checkbox 是 position:absolute，
-         没有定位上下文它会脱离文档流飞到 body 末尾，
-         表现为「开关轨道消失、文字贴上来」。 */
+      /* 必须声明 relative：内部 checkbox 是 position:absolute，
+         没有定位上下文它会脱离文档流飞到 body 末尾。
+
+         注意 display:flex 必须配合下面的 `.field > .switch`
+         一起写：`.field > label` 的特异性是 (0,1,1)，
+         高于单类选择器 .switch 的 (0,1,0)，而 .switch 恰好是
+         .field 的直接子元素 —— 只写 .switch { display:flex }
+         会被那条规则覆盖成 block，表现为「文字被挤到轨道下方」。 */
       position: relative;
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
+      align-items: center;
+      /* 说明文字较长，用 space-between 把轨道推到行尾；
+         若靠 margin-left:auto 需配合 flex-shrink 控制，
+         窄屏下文字换行时轨道会被挤到下一行。 */
+      justify-content: space-between;
+      gap: 16px;
       cursor: pointer;
     }
 
@@ -731,6 +739,12 @@
       opacity: 0;
       z-index: 1;
       cursor: pointer;
+    }
+
+    /* 提高特异性压过 `.field > label { display: block }`。
+       .switch 是 .field 的直接子元素，那条规则的 (0,1,1) 更高。 */
+    .field > .switch {
+      display: flex;
     }
 
     .switch-track {
@@ -771,14 +785,30 @@
       background: var(--ink);
     }
 
+    /* 键盘操作时焦点环圈住整个开关行，比只圈住 44px 轨道更好识别。
+       用 has() 而非 ~ ：~ 会命中后续所有同class 元素。 */
+    .switch:has(input:focus-visible) {
+      outline: 2px solid var(--amber);
+      outline-offset: 4px;
+      border-radius: var(--r-sm);
+    }
+
     .switch input:focus-visible + .switch-track {
       outline: 2px solid var(--amber);
       outline-offset: 2px;
     }
 
     .switch-label {
+      /* 必须是 block：span 默认 inline，而 inline 元素不吃 flex 布局 ——
+         order / flex 全部失效，表现为「文字被挤到轨道下方」。
+         与 .switch-track 同理。 */
+      display: block;
+      /* flex:1 + min-width:0 允许在窄屏收缩换行；
+         order:-1 让文字排在轨道之前（DOM 里 checkbox 必须在最前，
+         否则相邻兄弟选择器 input:checked + .switch-track 会失效）。 */
       flex: 1 1 auto;
       min-width: 0;
+      order: -1;
       font-size: 14px;
       color: var(--text);
       line-height: 1.5;
