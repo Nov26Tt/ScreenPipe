@@ -118,4 +118,29 @@ class TestConfigLoad:
         图片输入（同门deepseek-v4-pro 是纯文本，不能用）。
         """
         assert DEFAULTS["llm"]["model"] == "deepseek-flash"
-        assert DEFAULTS["llm"]["api_base"] == "https://api.deepseek.com"
+        # 带 /v1 的写法与用户既有配置一致，程序会拼成 /v1/chat/completions
+        assert DEFAULTS["llm"]["api_base"] == "https://api.deepseek.com/v1"
+
+
+class TestTemplateMatchesDefaults:
+    """config.example.yaml 与 DEFAULTS 必须一致。
+
+    两者一旦漂移，用户按文档配的默认值和程序实际用的默认值就对不上，
+    表现为"文档说 10 秒、实际跑 5 秒"这类难查的问题。
+    """
+
+    def test_example_yaml_matches_defaults(self):
+        import os
+
+        from config import get_base_dir
+
+        example = get_base_dir() / "config.example.yaml"
+        raw = yaml.safe_load(io.StringIO(example.read_text(encoding="utf-8")))
+
+        assert raw["llm"]["api_base"] == DEFAULTS["llm"]["api_base"]
+        assert raw["llm"]["model"] == DEFAULTS["llm"]["model"]
+        assert raw["capture"]["interval"] == DEFAULTS["capture"]["interval"]
+        assert raw["capture"]["quality"] == DEFAULTS["capture"]["quality"]
+        assert raw["server"]["port"] == DEFAULTS["server"]["port"]
+        assert raw["server"]["host"] == DEFAULTS["server"]["host"]
+        assert raw["history"]["max_records"] == DEFAULTS["history"]["max_records"]
