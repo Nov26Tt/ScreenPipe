@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -v --tb=short
+
+  #密钥泄露是本项目最敏感的红线，单独跑一个 job 兜底
+  secret-scan:
+    name: Secret leak guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure no config file is tracked
+        run: |
+          if git ls-files --error-unmatch config.yaml 2>/dev/null; then
+            echo "::error::config.yaml 不应被提交到仓库"
+            exit 1
+          fi
+          echo "config.yaml 未被跟踪，符合预期"
+
+      - name: Scan tracked files for hardcoded keys
+        run: |
+          # 匹配常见的 API Key 前缀；命中即失败
+          PATTERN='(sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16})'
+          if git grep -nEI "$PATTERN" -- . ':!tests/' ':!README.md'; then
+            echo "::error::检测到疑似硬编码密钥，请改用 config.yaml 或环境变量"
+            exit 1
+          fi
+          echo "未检测到硬编码密钥"
