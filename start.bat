@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title SnapStudy Launcher
+title ScreenPipe Launcher
 
 cd /d "%~dp0"
 REM Capture the script directory here: %~dp0 is not reliable inside a
@@ -34,7 +34,7 @@ exit /b 0
 
 :failed
 echo.
-echo [ERROR] SnapStudy exited with an error. See the messages above.
+echo [ERROR] ScreenPipe exited with an error. See the messages above.
 pause
 exit /b 1
 

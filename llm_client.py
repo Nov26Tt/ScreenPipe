@@ -1,243 +1,274 @@
-import json
+"""视觉模型客户端：统一 OpenAI 兼容接口，并特殊处理 MiniMax VLM 端点。
+
+设计要点
+--------
+1. **单一抽象**：任何支持 OpenAI ``/chat/completions`` 协议且接受图片输入
+   的服务都能接入（智谱、阿里百炼、火山方舟、Moonshot、Ollama、vLLM…），
+   换模型只需改配置，不改代码。
+2. **图片内联**：截图以 ``data:image/jpeg;base64,...`` 传入，避免依赖
+   外部图床，也保证截图不出本机（隐私）。
+3. **错误可诊断**：模型返回空内容、或明显"没看到图"时，抛出带修复建议的
+   异常，而不是把原始 JSON 丢给用户。
+"""
+
 import logging
 import re
-from typing import AsyncGenerator, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-# 模型返回空内容时统一使用这个提示，避免前端出现「有卡片、无内容」的空白
+# 模型返回空内容时的统一提示。给出三条最可能的原因，避免用户面对空白卡片
 EMPTY_REPLY_MESSAGE = (
-    "大模型返回了空内容。常见原因："
-    "① 当前模型不支持图片输入；"
-    "② API Key 无效或额度不足；"
-    "③ 服务端临时异常。请在「设置」中检查模型与 Key 后重试。"
+    "模型返回了空内容。常见原因：\n"
+    "① 当前模型不支持图片输入（纯文本模型无法处理截图）\n"
+    "② API Key 无效或额度不足\n"
+    "③ 服务端临时异常\n"
+    "建议：在「设置」中点击「测试连接」确认模型与 Key。"
+)
+
+DEFAULT_SYSTEM_PROMPT = (
+    "你是一个屏幕内容理解助手。请识别截图中的内容并输出结构化结果。\n\n"
+    "输出规则：\n"
+    "- 客观描述看到的信息，不要编造截图里没有的内容\n"
+    "- 结构化内容（列表、表格、字段）用 Markdown 表达\n"
+    "- 截图里有不确定或看不清的部分，明确指出而不是猜测\n"
+    "- 使用与截图内容相同的语言作答\n"
 )
 
 
 class LLMClient:
-    """
-    兼容 OpenAI API 格式的大模型客户端。
-    支持 OpenAI、DeepSeek、通义千问、Ollama 等所有 OpenAI 兼容 API。
-    同时支持 MiniMax Token Plan 的专用 VLM 端点。
-    """
+    """视觉大模型客户端（OpenAI 兼容协议）。"""
 
-    MINIMAX_VLM_ENDPOINTS = [
-        "minimax.chat", "minimaxi.com", "minimax.io", "minimax.com"
-    ]
+    REQUEST_TIMEOUT = 60.0
+    PROBE_TIMEOUT = 15.0
 
-    def __init__(self, api_base: str, api_key: str, model: str,
-                 system_prompt: Optional[str] = None):
-        self.api_base = api_base.rstrip("/")
-        self.api_key = api_key
-        self.model = model
-        self.system_prompt = system_prompt or (
-            "你是一个学习辅助AI。请识别截图中的题目，按以下格式输出：\n\n"
-            "选择题格式：题号. 题目一句话概括 - 正确答案选项内容\n"
-            "  例：3. 企业文化的核心特征 - 独特性、稳定性、整合性\n"
-            "判断题格式：题号. 题目一句话概括 - 对/错\n"
-            "  例：5. SWOT中O代表机会 - 对\n"
-            "填空题格式：题号. 题目关键词 - 填写内容\n"
-            "  例：2. 规模经济定义 - 产量增加导致单位成本下降\n"
-            "问答题格式：题号. 问题要点 - 一句话答案\n"
-            "  例：1. 目标管理法核心 - 通过设定明确目标评估绩效\n\n"
-            "铁则：\n"
-            "- 只显示正确选项的内容，不要列出全部选项\n"
-            "- 不要解释、不要解析、不要分析\n"
-            "- 每题占一行"
-        )
-        self._is_minimax = any(h in self.api_base.lower() for h in self.MINIMAX_VLM_ENDPOINTS)
+    # MiniMax 的 VLM 走独立端点，域名命中即自动切换
+    MINIMAX_HOSTS = ("minimax.chat", "minimaxi.com", "minimax.io", "minimax.com")
 
-    def _resolve_vlm_base(self) -> str:
-        """MiniMax Token Plan 的 VLM 根地址。
-        用户通常填 https://api.minimax.chat/v1，VLM 端点需要去掉 /v1 前缀重新拼接。
+    def __init__(
+        self,
+        api_base: str,
+        api_key: str,
+        model: str,
+        system_prompt: Optional[str] = None,
+    ):
         """
-        base = re.sub(r'/v\d+$', '', self.api_base)
-        return base.rstrip("/")
+        :param api_base: OpenAI 兼容根地址，如 ``https://open.bigmodel.cn/api/paas/v4``
+                         程序会在其后拼接 ``/chat/completions``
+        :param api_key:密钥
+        :param model:   模型名，**必须是支持图片输入的视觉模型**
+        :param system_prompt: 留空则使用内置的结构化输出提示
+        """
+        self.api_base = (api_base or "").rstrip("/")
+        self.api_key = api_key or ""
+        self.model = model or ""
+        self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self._is_minimax = any(h in self.api_base.lower() for h in self.MINIMAX_HOSTS)
 
-    async def _call_minimax_vlm(self, image_base64: str,
-                                user_prompt: Optional[str] = None) -> str:
-        """通过 MiniMax Token Plan 专用 VLM 端点识别图片"""
-        prompt = user_prompt or "请识别这张截图中的题目，并给出正确答案或最佳选择。"
-        if self.system_prompt:
-            prompt = f"{self.system_prompt}\n\n{prompt}"
+    # ------------------------------------------------------------------
+    # MiniMax 专用端点
+    # ------------------------------------------------------------------
 
-        vlm_url = f"{self._resolve_vlm_base()}/v1/coding_plan/vlm"
-        img_url = f"data:image/jpeg;base64,{image_base64}"
+    def _resolve_minimax_base(self) -> str:
+        """MiniMax VLM 端点需要去掉 /vN 前缀后重新拼接。"""
+        return re.sub(r"/v\d+$", "", self.api_base).rstrip("/")
 
-        logger.info(f"MiniMax VLM 请求: {vlm_url}, 图片大小={len(image_base64)}")
+    async def _call_minimax(self, image_base64: str, user_prompt: Optional[str] = None) -> str:
+        """调用 MiniMax Token Plan 的 VLM 专用端点（非 OpenAI 协议）。"""
+        prompt = user_prompt or "请识别这张截图中的内容并结构化输出。"
+        url = f"{self._resolve_minimax_base()}/v1/coding_plan/vlm"
+        logger.info(f"MiniMax VLM请求 {url}")
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT) as client:
             response = await client.post(
-                vlm_url,
+                url,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
                 json={
-                    "prompt": prompt,
-                    "image_url": img_url
-                }
+                    "prompt": f"{self.system_prompt}\n\n{prompt}",
+                    "image_url": f"data:image/jpeg;base64,{image_base64}",
+                },
             )
 
-            if response.status_code != 200:
-                error_text = response.text[:500]
-                logger.error(f"MiniMax VLM error [{response.status_code}]: {error_text}")
-                raise Exception(f"MiniMax VLM 返回错误 ({response.status_code}): {error_text}")
+        if response.status_code != 200:
+            detail = response.text[:500]
+            logger.error(f"MiniMax VLM 错误 [{response.status_code}]: {detail}")
+            raise RuntimeError(f"MiniMax VLM 返回错误 ({response.status_code}): {detail}")
 
-            data = response.json()
-            logger.info(f"MiniMax VLM 响应 keys: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+        return self._extract_text(response.json(), "MiniMax VLM")
 
-            for field in ("text", "content", "response", "result", "answer"):
-                if isinstance(data, dict) and data.get(field):
-                    return data[field]
+    # ------------------------------------------------------------------
+    # OpenAI 兼容路径
+    # ------------------------------------------------------------------
 
-            if isinstance(data, str) and data.strip():
-                return data
+    def _build_messages(
+        self,
+        image_base64: str,
+        user_prompt: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """构造 OpenAI 多模态消息体。
 
-            # 取不到任何可用字段时明确报错，而不是把原始 JSON 当成答案显示
-            logger.error(f"MiniMax VLM 未返回可用内容: {str(data)[:300]}")
-            raise Exception(EMPTY_REPLY_MESSAGE)
-
-    async def chat_with_image(self, image_base64: str,
-                              user_prompt: Optional[str] = None) -> str:
-        """发送图片给 LLM，返回完整回答"""
-        if not image_base64:
-            raise ValueError("截图为空，无法发送给 LLM")
-
-        img_len = len(image_base64)
-        logger.info(f"发送截图到 LLM, 模型={self.model}, 图片Base64长度={img_len}")
-
-        if self._is_minimax:
-            logger.info("检测到 MiniMax API，使用 Token Plan VLM 端点")
-            return await self._call_minimax_vlm(image_base64, user_prompt)
-
-        messages = self._build_messages(image_base64, user_prompt)
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 4096
-                }
-            )
-
-            if response.status_code != 200:
-                error_text = response.text[:500]
-                logger.error(f"LLM API error [{response.status_code}]: {error_text}")
-                raise Exception(f"LLM API 返回错误 ({response.status_code}): {error_text}")
-
-            data = response.json()
-            try:
-                content = data["choices"][0]["message"]["content"]
-            except (KeyError, IndexError, TypeError) as exc:
-                logger.error(f"LLM 响应格式异常: {str(data)[:300]}")
-                raise Exception(
-                    f"大模型响应格式异常，未取到内容：{str(data)[:200]}"
-                ) from exc
-
-            if not content or not str(content).strip():
-                logger.error("LLM 返回了空内容")
-                raise Exception(EMPTY_REPLY_MESSAGE)
-
-            return content
-
-    async def chat_with_image_stream(self, image_base64: str,
-                                     user_prompt: Optional[str] = None) -> AsyncGenerator[str, None]:
-        """发送图片给 LLM，流式返回回答"""
-        messages = self._build_messages(image_base64, user_prompt)
-
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 4096,
-                    "stream": True
-                }
-            ) as response:
-                if response.status_code != 200:
-                    error_body = await response.aread()
-                    raise Exception(f"LLM API 返回错误 ({response.status_code}): {error_body[:500]}")
-
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            delta = chunk["choices"][0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-                        except json.JSONDecodeError:
-                            continue
-
-    def _build_messages(self, image_base64: str,
-                        user_prompt: Optional[str] = None) -> list:
-        prompt = user_prompt or "请识别这张截图中的题目，并给出正确答案或最佳选择。如果有多道题目，请逐一作答。"
-
+        注意：图片只能放在 user 消息的 content 数组里，放进 system 或
+        assistant 会返回 400。
+        """
+        prompt = user_prompt or "请识别这张截图中的内容并结构化输出。"
         return [
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
+                    {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {
                             "url": f"data:image/jpeg;base64,{image_base64}",
-                            "detail": "high"
-                        }
-                    }
-                ]
-            }
+                            # high 走高精度分块，OCR 场景必要；纯文本模型会报错
+                            "detail": "high",
+                        },
+                    },
+                ],
+            },
         ]
 
-    async def test_connection(self) -> dict:
-        """测试 API 连接是否正常"""
+    async def chat_with_image(
+        self,
+        image_base64: str,
+        user_prompt: Optional[str] = None,
+    ) -> str:
+        """发送截图给模型，返回完整文本结果。"""
+        if not image_base64:
+            raise ValueError("截图为空，未发送请求")
+
+        logger.info(
+            f"请求模型 {self.model}，Base64 长度 {len(image_base64)}"
+        )
+
+        if self._is_minimax:
+            return await self._call_minimax(image_base64, user_prompt)
+
+        async with httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT) as client:
+            response = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": self._build_messages(image_base64, user_prompt),
+                    "temperature": 0.2,   # 截图理解需要稳定而非发散
+                    "max_tokens": 4096,
+                },
+            )
+
+        if response.status_code != 200:
+            detail = response.text[:500]
+            logger.error(f"模型服务错误 [{response.status_code}]: {detail}")
+            raise RuntimeError(f"模型服务返回错误 ({response.status_code}): {detail}")
+
+        return self._extract_text(response.json(), "模型服务")
+
+    # ------------------------------------------------------------------
+    # 响应解析与连通性测试
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_text(payload: Any, source: str) -> str:
+        """从响应中取出文本，取不到就抛带诊断信息的异常。
+
+        需要兼容两种 content 形态：
+        * 字符串 —— 绝大多数 OpenAI 兼容服务
+        * 列表 —— 部分服务的多模态回复形如 ``[{"type": "text", "text": ...}]``
+        """
+        if isinstance(payload, dict):
+            content = LLMClient._extract_content(payload)
+            if content is None:
+                logger.error(f"{source} 响应结构异常: {str(payload)[:300]}")
+                raise RuntimeError(
+                    f"{source} 响应格式异常，未取到内容：{str(payload)[:200]}"
+                )
+
+            if not content or not content.strip():
+                logger.error(f"{source} 返回空内容")
+                raise RuntimeError(EMPTY_REPLY_MESSAGE)
+            return content
+
+        if isinstance(payload, str) and payload.strip():
+            return payload
+
+        logger.error(f"{source} 未返回可用内容: {str(payload)[:300]}")
+        raise RuntimeError(EMPTY_REPLY_MESSAGE)
+
+    @staticmethod
+    def _extract_content(payload: Dict[str, Any]) -> Optional[str]:
+        """取出 ``choices[0].message.content`` 并归一化为字符串。
+
+        :return: 文本内容；结构不符合预期时返回 ``None``
+        """
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                url = f"{self.api_base}/chat/completions"
+            raw = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            return None
+
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, list):
+            parts = [
+                item.get("text", "")
+                for item in raw
+                if isinstance(item, dict) and item.get("text")
+            ]
+            return "".join(parts) or None
+        return None
+
+    async def test_connection(self) -> Dict[str, Any]:
+        """测试 API 连通性。
+
+        注意：这里只发一条**纯文本**探测消息。视觉模型同样会正常回复，
+        所以通过并不代表支持图片输入——真正的确认方式是实际截一次图。
+        """
+        probe = "请只回复四个字：连接成功"
+        try:
+            async with httpx.AsyncClient(timeout=self.PROBE_TIMEOUT) as client:
                 response = await client.post(
-                    url,
+                    f"{self.api_base}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
                     },
                     json={
                         "model": self.model,
-                        "messages": [{"role": "user", "content": "您好，请回复：连接成功"}],
-                        "max_tokens": 20
-                    }
+                        "messages": [{"role": "user", "content": probe}],
+                        "max_tokens": 20,
+                    },
                 )
-                if response.status_code == 200:
-                    data = response.json()
-                    return {"ok": True, "reply": data["choices"][0]["message"]["content"]}
-                elif response.status_code == 401:
-                    return {"ok": False, "error": "API Key 无效或未授权，请检查 Key 是否正确"}
-                elif response.status_code == 404:
-                    return {"ok": False, "error": f"API 地址不存在 (404): {url}，请检查 API 地址是否正确"}
-                else:
-                    return {"ok": False, "error": f"[{response.status_code}] {response.text[:500]}"}
-        except Exception as e:
-            return {"ok": False, "error": f"连接异常: {str(e)}"}
+
+            if response.status_code == 200:
+                return {
+                    "ok": True,
+                    "reply": self._extract_text(response.json(), "模型服务"),
+                    "note": "连通性正常。若识别结果异常，请确认该模型支持图片输入。",
+                }
+            if response.status_code == 401:
+                return {"ok": False, "error": "API Key 无效或未授权（401）"}
+            if response.status_code == 404:
+                return {
+                    "ok": False,
+                    "error": f"接口不存在（404）：{response.request.url}，请检查 API 地址与模型名",
+                }
+            if response.status_code == 429:
+                return {"ok": False, "error": "触发限流或额度不足（429），请稍后重试"}
+            return {"ok": False, "error": f"[{response.status_code}] {response.text[:500]}"}
+
+        except httpx.TimeoutException:
+            return {"ok": False, "error": "连接超时，请检查网络或 API 地址"}
+        except httpx.RequestError as exc:
+            return {"ok": False, "error": f"连接失败：{exc}"}
+        except Exception as exc:
+            return {"ok": False, "error": f"连接异常：{exc}"}

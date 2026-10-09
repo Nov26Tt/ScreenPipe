@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""SnapStudy 一键启动器（Windows，仅依赖标准库）。
+"""ScreenPipe 一键启动器（Windows，仅依赖标准库）。
 
 由 start.bat 调用，正常使用时不需要手动运行。自动完成以下步骤，
 可重复运行，已完成的步骤会自动跳过：
 
     1/5  校验 Python 版本（>= 3.10）
     2/5  创建或复用项目级虚拟环境 .venv
-    3/5  校验并安装 requirements.txt 中的依赖
+    3/5  校验并安装依赖
     4/5  从 config.example.yaml 生成 config.yaml
     5/5  启动服务
 
@@ -143,7 +143,7 @@ def main() -> int:
     _setup_stdout()
 
     print("=" * 44, flush=True)
-    print("     SnapStudy - 一键启动", flush=True)
+    print("     ScreenPipe - 一键启动", flush=True)
     print("=" * 44, flush=True)
     print(flush=True)
 
