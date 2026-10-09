@@ -1,201 +1,228 @@
-# SnapStudy · 截屏识题学习助手
+# ScreenPipe
 
-> 屏幕上的题目自动识别、AI 即时给出解析，手机浏览器实时同步 —— 让学习不断流。
+**把屏幕上的内容，实时变成结构化文本。**
 
-## 为什么做这个项目
+一条轻量管道：屏幕捕获 → 像素级变更检测 → 视觉模型理解 → WebSocket 实时推送。
 
-在刷题、看网课、做练习时遇到不会的题目，传统流程是：
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-46%20passed-success)](tests/)
 
-```text
-拿起手机 → 打开搜题 App → 拍照 → 等待识别 → 查看解析
+<!-- 首屏放一张真实运行截图；没有截图的仓库在GitHub 上很难留住人 -->
+
+---
+
+## 为什么做这个
+
+屏幕上有很多**只有看一眼才知道内容**的东西：网课老师的板书、监控看板上的数字、
+后台表格里的一行数据、纸质票据上的金额。这些内容不复制粘贴出来，就只能靠人眼读。
+
+现有的两种做法都不好用：
+
+| 做法 | 问题 |
+| --- | --- |
+| 手动截图 → 上传给模型 | 打断节奏，一张图一次请求，成本高 |
+| 定时截图 → 每次都问模型 | 屏幕没变也在烧 Token，慢且贵 |
+
+ScreenPipe 的做法是**只在画面真的变了时才调模型**，并把结果推送到手机。
+
+## 它能做什么
+
+核心是一套管道，场景取决于你怎么写`system_prompt`：
+
+- **在线课程笔记** —— 板书和PPT 自动转成结构化要点
+- **监控看板读数** —— 大屏上的异常数字自动提取并告警
+- **UI 回归检查** —— 界面变化时自动抓取并对比
+- **表单 / 票据结构化** —— 纸质或截图里的字段转JSON
+- **数据核对** —— 两个窗口的内容差异比对
+
+> 内置提示词原本是为"解题"场景写的（刷题、网课练习），
+> 这只是一个 case study —— 技术内核与场景无关，改 `system_prompt` 即可切换。
+
+## 核心设计
+
+### 1. 像素级变更检测（省Token 的关键）
+
+屏幕静止时反复请求视觉模型是纯浪费。本模块用 `blake2b` 对像素数据取指纹，
+画面没变就直接跳过模型调用。
+
+```python
+#为什么不用内置 hash()
+#   1. hash() 对 bytes 会被 PYTHONHASHSEED 随机化 —— 进程重启后
+#      同一画面得到的值不同，第一帧永远被判定为"已变化"
+#   2. 桶数小，理论上存在碰撞
+# blake2b 跨进程稳定，对小内存依然快
+current = hashlib.blake2b(raw_pixels, digest_size=16).hexdigest()
+if current == self._last_hash:
+    return b""# 跳过模型调用
 ```
 
-整个过程频繁打断学习节奏。本项目把这条链路压缩成一步：
+效果：连续观看同一个页面 10 分钟，可能只触发 1~2 次模型调用。
 
-**程序自动截取屏幕上的题目 → AI 即时给出解析 → 手机浏览器实时显示**。
+### 2. 密钥永不出进程
 
-题目在哪，解析就在哪，无需离开当前学习界面。
+服务监听 `0.0.0.0` 供手机访问，且**不内置认证** —— 所以密钥泄露是真实风险。
+`config.py` 因此把输出分成两个出口：
 
-## 功能特性
-
-- **自动截屏识别**：按设定间隔自动截屏，屏幕内容无变化时自动跳过，避免重复请求、节省 Token
-- **多模态模型解析**：调用视觉大模型识别题目并给出解析
-- **手机实时同步**：通过 WebSocket 推送到手机浏览器，电脑在做什么，手机就能看到解析
-- **手动触发**：手机端可随时手动发起一次识别
-- **历史记录**：默认保留最近 200 条解析结果，可随时回看、一键清空
-- **配置热更新**：网页端即可修改模型配置并立即生效
-- **广泛兼容**：支持任意 OpenAI 兼容 API，以及 MiniMax Token Plan 的 VLM 专用端点
-- **视觉能力提醒**：检测到模型未识图时主动告警，避免使用纯文本模型导致误判
-
-## 工作原理
-
-```text
-┌─────────────┐   截屏    ┌──────────────┐   Base64   ┌─────────────┐
-│  屏幕内容    │ ────────> │ capture.py   │ ─────────> │ llm_client  │
-└─────────────┘           └──────────────┘            └──────┬──────┘
-                                                             │ 解析结果
-                                                             v
-┌─────────────┐  WebSocket  ┌──────────────┐            ┌─────────────┐
-│ 手机浏览器   │ <────────── │ server/app.py│ <───────── │  历史记录    │
-└─────────────┘             └──────────────┘            └─────────────┘
+```python
+cfg.to_dict()# 含明文，仅限进程内部
+cfg.to_public_dict()        # api_key 掩码为 sk-a...wxyz，唯一允许走 HTTP 的出口
 ```
 
-## 环境要求
+配套的前端逻辑：密钥输入框**不回填**明文，留空表示"沿用已保存的密钥"；
+后端收到掩码形态的 Key 会直接忽略，避免把真密钥覆盖成一串乱码。
 
-- **Windows**
-- **Python 3.10+**（安装时建议勾选 `Add python.exe to PATH`）
-- 一个支持图片识别的多模态大模型 API Key
+### 3. 单一模型抽象
 
-> **请注意**：如果 `python --version` 没有任何输出，说明该命令被 Microsoft Store
-> 的 0 字节占位程序（`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`）拦截了。
-> 这不影响本项目 —— `start.bat` 会自动跳过它，找到真正的 Python。
+任何 OpenAI 兼容且支持图片输入的服务都能接入，换模型只改配置不改代码。
+MiniMax 的 VLM 走独立端点，客户端会自动识别域名并切换协议。
+
+### 4. 手动触发强制截图
+
+自动模式靠变更检测省Token，但代价是"题没变就什么都拿不到"。
+因此手动触发会先 `reset_hash()`，保证每次点击都有结果。
 
 ## 快速开始
 
-### 一键启动
+### Windows：双击 `start.bat`
 
-**双击 `start.bat`** 即可，全程无需命令行操作。
+无需命令行。脚本会自动完成：校验 Python → 创建虚拟环境 → 安装依赖 →
+生成配置文件 → 启动服务。已完成的步骤在后续启动会自动跳过。
 
-它会自动完成以下流程，可重复运行，已完成的步骤会自动跳过：
+> `start.bat` 能绕过 Microsoft Store 的 0 字节 Python 占位程序 ——
+> 这是 Windows 上最常见的"明明装了 Python 却说找不到"的原因。
+
+### 任意平台：手动运行
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+
+pip install -r requirements.txt
+cp config.example.yaml config.yaml# 填入你的 API Key
+python main.py
+```
+
+启动后终端会打印手机可访问的地址（端口被占用时自动避让）：
 
 ```text
-1/5  校验 Python 3.10+
-2/5  创建 / 复用项目级虚拟环境 .venv
-3/5  校验并安装 requirements.txt 中的依赖
-4/5  从 config.example.yaml 生成 config.yaml
-5/5  启动服务
+==============================================
+  ScreenPipe 已启动: http://192.168.1.100:8765
+  手机需与电脑处于同一局域网，按 Ctrl+C 停止
+==============================================
 ```
 
-> 首次运行时，创建虚拟环境与下载依赖可能耗时几分钟，窗口里会持续有输出，请耐心等待；已完成的步骤在后续启动会自动跳过。
+手机浏览器打开该地址即可。
 
-**填写 API Key**：首次运行会自动生成 `config.yaml`，用记事本打开并填入你的密钥：
+## 选择视觉模型
 
-```yaml
-llm:
-  api_base: https://api.deepseek.com/v1   # 任意 OpenAI 兼容地址
-  api_key: your-api-key-here              # 换成你自己的 Key
-  model: deepseek-flash                   # 必须是视觉模型
-```
+**必须是支持图片输入的视觉（多模态）模型** —— 纯文本模型无法处理截图。
 
-> `config.yaml` 已被 `.gitignore` 忽略，不会被上传到仓库，请放心填写。也可以启动后在手机网页端修改。
+| 服务商 | 模型 | `api_base` | 备注 |
+| --- | --- | --- | --- |
+| 智谱 | `glm-4.6v-flash` | `https://open.bigmodel.cn/api/paas/v4` | **免费档，默认值** |
+| 阿里百炼 | `qwen3-vl-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 新用户限免 |
+| Ollama 本地 | `qwen3-vl:8b` | `http://localhost:11434/v1` | **图片不出本机** |
+| 智谱 | `glm-4.6v` | 同上 | 付费，中文 OCR 较强 |
+| 阿里百炼 | `qwen3-vl-plus` | 同上 | 付费，综合能力强 |
+| 火山方舟 | `doubao-seed-2-0-lite` | `https://ark.cn-beijing.volces.com/api/v3` | 付费 |
+| Moonshot | `kimi-k2.6` | `https://api.moonshot.cn/v1` | 付费 |
+| MiniMax | Token Plan VLM | `https://api.minimax.chat/v1` | 走专用端点，自动适配 |
 
-启动成功后窗口会打印访问地址（默认端口 `8765`，被占用时自动向后探测）：
+模型名随厂商快速迭代，**以上核实于 2026-10**；若返回 `model not found`，
+请以对应厂商官方文档为准。网页端「设置」里内置了这些预设，选择即自动填入。
 
-```text
-服务已启动，手机浏览器访问: http://192.168.1.100:8765
-```
+<details>
+<summary>关于 DeepSeek</summary>
 
-关闭窗口或按 `Ctrl + C` 即可停止服务。
+DeepSeek 官方 API（`api.deepseek.com`）当前提供的是**纯文本**模型，
+不接受图片输入，因此**不能**用于本项目。DeepSeek-VL 系列是开源权重，
+需自行部署后再通过Ollama / vLLM 接入。
+</details>
 
-### 手机端使用
+## 配置
 
-确保手机与电脑处于**同一局域网**，用手机浏览器打开终端打印的地址即可（以终端实际打印的为准，端口可能因自动避让而与配置值不同）：
-
-- 点击「自动截屏」开始持续识别
-- 点击「截屏一次」手动触发
-- 解析结果通过 WebSocket 实时推送显示
-
-## 配置说明
+全部配置项见 `config.example.yaml`。
 
 | 配置项 | 说明 | 默认值 |
 | --- | --- | --- |
 | `capture.interval` | 自动截图间隔（秒） | `10` |
-| `capture.quality` | JPEG 压缩质量 | `60` |
-| `capture.region` | 截屏区域 `[left, top, width, height]`，不填为全屏 | 全屏 |
-| `history.max_records` | 历史记录保留条数 | `200` |
-| `llm.api_base` | OpenAI 兼容 API 地址，程序会在其后拼接 `/chat/completions` | `https://api.deepseek.com/v1` |
-| `llm.api_key` | API 密钥，**必须替换成自己的** | `your-api-key-here` |
-| `llm.model` | 模型名称，**必须是支持图片输入的视觉模型** | `deepseek-flash` |
-| `llm.system_prompt` | 系统提示词，用于约束输出格式 | 见 `llm_client.py` |
-| `server.host` | 监听地址 | `0.0.0.0` |
-| `server.port` | 监听端口，**被占用时自动向后探测** | `8765` |
+| `capture.quality` | JPEG 质量（1-95），越低体积越小 | `60` |
+| `capture.region` | 截屏区域 `[left, top, width, height]` | 全屏 |
+| `capture.save_dir` | 截图落盘目录，留空用 `screenshots/` | `screenshots/` |
+| `history.max_records` | 内存中保留的记录条数（超出自动淘汰） | `200` |
+| `llm.api_base` | OpenAI 兼容地址，程序会拼接 `/chat/completions` | 智谱 |
+| `llm.api_key` | 密钥（`config.yaml` 已被 gitignore） | 占位符 |
+| `llm.model` | **必须是视觉模型** | `glm-4.6v-flash` |
+| `llm.system_prompt` | 留空则用内置提示词 | 内置 |
+| `server.host` | 监听地址，手机访问需保持 `0.0.0.0` | `0.0.0.0` |
+| `server.port` | 监听端口，被占用时自动向后探测 | `8765` |
 
-> 内置默认的 `llm.model` 是 `deepseek-flash`（支持图片输入），但仍请按下方表格确认你的服务商与可用模型名。
-
-### 推荐的视觉模型
-
-| 服务商 | 模型名示例 | `api_base` 示例 |
-| --- | --- | --- |
-| OpenAI | `gpt-5.6-terra` | `https://api.openai.com/v1` |
-| DeepSeek | `deepseek-flash` | `https://api.deepseek.com/v1` |
-| 通义千问 | `qwen3-vl-plus` | 阿里云百炼 OpenAI 兼容地址 |
-| 智谱 AI | `glm-4.6v` | 智谱 OpenAI 兼容地址 |
-| 豆包 | `doubao-seed-1.6-vision` | 火山方舟 OpenAI 兼容地址 |
-| Moonshot / Kimi | `kimi-k2.6` | `https://api.moonshot.cn/v1` |
-| SiliconFlow | `Qwen/Qwen3-VL-235B-A22B-Instruct` | `https://api.siliconflow.cn/v1` |
-| MiniMax | Token Plan VLM 端点 | `https://api.minimax.chat/v1` |
-
-> 模型名会随各家厂商迭代变化，上表仅作起点，请以对应官方文档为准。
-
-#### DeepSeek
-
-DeepSeek 已提供支持图片输入的 `deepseek-flash`：
-
-```yaml
-llm:
-  api_base: https://api.deepseek.com/v1
-  model: deepseek-flash
-```
-
-图片以 `data:image/jpeg;base64,...` 内联传入（本项目即采用这种方式）；`image_url.detail` 支持 `low` / `high` / `original` / `auto`。注意**图片只能出现在 user 消息中**，放进 system 或 assistant 消息会返回 400。
-
-> 旧模型名 `deepseek-v4-flash-vision-exp` 已下线：调用仍会被接受，但请求实际由最新的 Flash 模型承接，新接入请直接使用 `deepseek-flash`。
-
-#### MiniMax
-
-`api_base` 填 `https://api.minimax.chat/v1` 即可。程序会识别 MiniMax 域名并自动改走 Token Plan 的 VLM 专用端点（`/v1/coding_plan/vlm`），无需额外配置。
-
-> 纯文本模型无法识别截图，程序会在检测到未识图时给出提示。
+配置可在网页端热更新，改完立即生效。
 
 ## 项目结构
 
 ```text
 .
-├── main.py                 # 程序入口
-├── config.py               # 配置加载与持久化
-├── capture.py              # 屏幕截图模块（含内容变化检测）
-├── llm_client.py           # LLM 客户端（OpenAI 兼容 + MiniMax VLM）
-├── config.example.yaml     # 配置模板
-├── requirements.txt        # 依赖清单
-├── launcher.py             # 启动器内部实现（由 start.bat 调用）
-├── start.bat               # 唯一启动入口（双击即可）
-└── server/
-    ├── app.py              # FastAPI 服务 + WebSocket 推送
-    └── templates/
-        └── index.html      # 手机端页面
+├── main.py                    # 入口（含Windows 终端编码兜底）
+├── config.py                  # 配置读写 + 密钥脱敏
+├── capture.py                 # 屏幕捕获 + 像素指纹变更检测
+├── llm_client.py              # 视觉模型客户端（OpenAI 兼容 + MiniMax）
+├── launcher.py                # 一键启动器实现（由 start.bat 调用）
+├── start.bat                  # Windows 唯一启动入口
+├── pyproject.toml             # 包元数据与依赖声明
+├── config.example.yaml        # 配置模板
+├── requirements.txt           # 依赖清单
+├── server/
+│   ├── app.py                 # FastAPI 服务：REST + WebSocket 编排
+│   └── templates/index.html   # 移动端界面（单文件，无构建步骤）
+└── tests/                     # 46 个单元 / 集成测试
 ```
+
+职责边界：`capture.py` 管怎么截屏，`llm_client.py` 管怎么调模型，
+`server/app.py` 只做编排与对外暴露。
+
+## 开发
+
+```bash
+pip install -e ".[dev]"
+pytest                    # 46 个用例
+pytest --cov              # 覆盖率
+```
+
+测试覆盖了几处容易回归的地方：密钥脱敏、掩码回显保护、响应结构兼容、
+有界历史淘汰、端口避让。
+
+## 已知限制
+
+- **仅 Windows**：截屏依赖 `mss`，`start.bat` 也是 Windows 专用；
+  Python 代码本身跨平台，但入口脚本没有做 macOS / Linux 适配
+- **服务无认证**：默认监听 `0.0.0.0`，同网段 anyone 都能访问。
+  **请勿直接暴露到公网**；需要远程访问请自行加反向代理 + TLS + 访问控制
+- **历史仅存内存**：重启即丢失，没有做持久化
+- **`system_prompt` 需按场景改**：内置提示词偏"解题"，
+  换场景时记得改，否则模型会按题目格式输出
 
 ## 常见问题
 
-**Q：模型回复“没有收到图片”？**
+**Q：模型回复"没有收到图片"？**
+说明当前模型不支持图片输入。换一个视觉模型，或点「设置 → 测试连接」确认。
 
-说明当前 `llm.model` 不是视觉模型。请更换为支持图片识别的多模态模型。
-
-**Q：双击 `start.bat` 提示找不到 Python？**
-
-先确认已安装 Python 3.10+。若 `python --version` 没有任何输出，说明 PATH 里的 `python`
-被 Microsoft Store 的 0 字节占位程序拦截了；`start.bat` 已能自动跳过它。若仍找不到，
-请重新安装 Python 并勾选 `Add python.exe to PATH`。详见上方「环境要求」。
-
-**Q：端口被占用了怎么办？**
-
-默认端口为 `8765`（已避开 8000 / 8080 / 3000 等常用端口）。若该端口仍被占用，程序会**自动向后探测可用端口**并在终端打印实际地址，以打印出来的地址为准即可；也可以在 `config.yaml` 中通过 `server.port` 手动指定，或关闭占用该端口的程序。
+**Q：提示端口被占用？**
+程序会自动向后探测并打印实际端口，以打印的地址为准。也可在
+`config.yaml` 里手动指定 `server.port`。
 
 **Q：手机打不开页面？**
+确认手机与电脑同一局域网、电脑防火墙放行该端口、`server.host` 为 `0.0.0.0`。
 
-检查手机与电脑是否在同一局域网、电脑防火墙是否放行该端口、`server.host` 是否为 `0.0.0.0`。
+**Q：自动截屏不触发？**
+画面无变化时会跳过，这是省 Token 的正常行为。点「手动截图」强制触发一次。
 
-**Q：自动截屏不触发识别？**
-
-程序会在屏幕内容与上一次完全一致时跳过请求，这是节省 Token 的正常行为；屏幕内容变化后会自动继续。
-
-## 免责声明
-
-本项目仅供**学习交流与技术研究**所用：
-
-- 请勿将本项目用于任何违反法律法规、校规校纪或考试纪律的场景，由此产生的一切后果由使用者自行承担；
-- 本项目不鼓励、不支持任何形式的学术不端行为；
-- 一经下载、克隆或使用本项目，即视为已阅读并同意上述条款。
+**Q：`start.bat` 提示找不到 Python？**
+若 `python --version` 没有任何输出，是 Microsoft Store 的占位程序在拦截。
+关掉它：设置 → 应用 → 高级应用设置 → 应用执行别名 → 禁用 `python.exe`。
 
 ## License
 
