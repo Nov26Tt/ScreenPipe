@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/Nov26Tt/ScreenPipe/actions/workflows/ci.yml/badge.svg)](https://github.com/Nov26Tt/ScreenPipe/actions/workflows/ci.yml)
 [![tests](https://img.shields.io/badge/tests-108%20passed-success)](tests/)
 
 <p align="center">
@@ -333,10 +334,24 @@ pytest --cov              # 覆盖率
 它来自一次真实事故 —— 重写 `server/app.py` 时漏掉了 `/api/ip` 端点，
 页面一直显示「地址获取失败」，而当时所有测试都是绿的。
 
+### 持续集成
+
+每次 push 触发 [GitHub Actions](https://github.com/Nov26Tt/ScreenPipe/actions/workflows/ci.yml)：
+
+- **测试矩阵** —— Python 3.10 / 3.11 / 3.12 / 3.13，各跑 108 个用例
+- **密钥泄漏守卫** —— 独立 job，检查 `config.yaml` 是否被跟踪、
+  以及是否有硬编码的 API Key（`sk-` / `ghp_` / `AKIA` 前缀）
+
+矩阵只覆盖 Windows，因为项目依赖 `mss` 截屏与 `start.bat`，
+在 Linux 上无法真实运行。密钥扫描用 `shell: bash` 执行 ——
+这两条命令都以非零码表示「未命中」，而 GitHub 的 PowerShell 7
+会把 native 命令的 stderr 提升为终止错误，导致「明明没泄露却报失败」。
+
 ## 已知限制
 
-- **仅 Windows**：截屏依赖 `mss`，`start.bat` 也是 Windows 专用；
-  Python 代码本身跨平台，但入口脚本没有做 macOS / Linux 适配
+- **仅 Windows**：截屏依赖 `mss`，`start.bat` 也是 Windows 专用。
+  核心逻辑（配置、SQLite、指纹、区域换算）已做平台解耦 ——
+  `Capture` 采用惰性初始化，无显示器时也能构造 —— 但截屏本身仍需图形环境
 - **服务无认证**：默认监听 `0.0.0.0`，同网段 anyone 都能访问。
   **请勿直接暴露到公网**；需要远程访问请自行加反向代理 + TLS + 访问控制
 - **历史与截图同目录**：清空记录会一并删除截图，暂不支持只删记录保留图片
